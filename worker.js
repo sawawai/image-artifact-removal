@@ -1,6 +1,6 @@
 'use strict';
 
-importScripts('./vendor/ort/ort.all.min.js');
+importScripts('https://cdn.jsdelivr.net/npm/onnxruntime-web@1.24.2/dist/ort.all.min.js');
 
 const TILE = 256;
 const OV   = 32;
@@ -10,8 +10,7 @@ let useF16  = true;
 const F16OK = typeof Float16Array !== 'undefined';
 
 async function loadModel(modelUrl) {
-  const workerDir = self.location.href.substring(0, self.location.href.lastIndexOf('/') + 1);
-  ort.env.wasm.wasmPaths  = workerDir + 'vendor/ort/';
+  ort.env.wasm.wasmPaths  = 'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.24.2/dist/';
   ort.env.wasm.numThreads = Math.max(1, (navigator.hardwareConcurrency || 4) - 1);
 
   const resp = await fetch(modelUrl);

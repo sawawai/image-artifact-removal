@@ -15,7 +15,7 @@
 (function () {
   if (!('serviceWorker' in navigator)) return;
   if (window.crossOriginIsolated) return;
-  navigator.serviceWorker.register('./sw.js?v=4').then(function () {
+  navigator.serviceWorker.register('./sw.js?v=5').then(function () {
     // Wait until the SW is active and controlling this page before reloading,
     // otherwise the reload fires before the SW can inject COOP/COEP headers.
     return navigator.serviceWorker.ready;
@@ -30,7 +30,9 @@
 }());
 </script>
 
-<link rel="stylesheet" href="fonts/fonts.css">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@300;400;500;600&display=swap">
 <link rel="stylesheet" href="style.css?v=8">
 </head>
 <body>

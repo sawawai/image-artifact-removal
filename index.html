@@ -159,13 +159,26 @@
           <span class="model-btn-name" id="t-fchoice-a">Sharp</span>
         </button>
         <button class="model-btn" id="fchoice-b" onclick="selectFilter('b')">
-          <span class="model-btn-name" id="t-fchoice-b">Natural (slower)</span>
+          <span class="model-btn-name" id="t-fchoice-b">Soft (slower)</span>
         </button>
       </div>
-      <button class="btn-load" id="btn-load" onclick="loadFilter()">
-        <span id="t-btn-load">Load filter</span>
+    </div>
+
+    <div class="sb-group">
+      <button class="btn-primary" id="btn-process" onclick="processImage()" disabled>
+        <span id="t-btn-process">ノイズを除去</span>
       </button>
-      <div class="inline-status" id="load-status" style="display:none"></div>
+      <button class="btn-danger" id="btn-cancel" onclick="cancelProcessing()" style="display:none">
+        <span id="t-btn-cancel">キャンセル</span>
+      </button>
+      <div class="status-area">
+        <div class="inline-status" id="filter-status" style="display:none"></div>
+        <div class="prog-wrap" id="proc-prog">
+          <div class="prog-bar"><div class="prog-fill" id="proc-fill"></div></div>
+          <div class="prog-label" id="proc-label">処理中...</div>
+        </div>
+        <div class="inline-status" id="proc-status"></div>
+      </div>
     </div>
 
     <div class="sb-group sb-group--muted" id="strength-section">
@@ -177,6 +190,9 @@
         <div class="slider-fill-bar" id="slider-fill" style="width:80%"></div>
         <input type="range" class="styled" id="strength" min="0" max="100" value="80" step="10" disabled>
       </div>
+      <div class="inline-status strength-hint" id="strength-hint">
+        <span id="t-strength-hint">スライダーはリアルタイムで反映されます。</span>
+      </div>
       <div style="display:none">
         <span id="t-str-lo">元の画像</span>
         <span id="t-str-hi">最大除去</span>
@@ -184,18 +200,6 @@
     </div>
 
     <div class="sb-group">
-      <button class="btn-primary" id="btn-process" onclick="processImage()" disabled>
-        <span id="t-btn-process">ノイズを除去</span>
-      </button>
-      <button class="btn-danger" id="btn-cancel" onclick="cancelProcessing()" style="display:none">
-        <span id="t-btn-cancel">キャンセル</span>
-      </button>
-      <div class="prog-wrap" id="proc-prog">
-        <div class="prog-bar"><div class="prog-fill" id="proc-fill"></div></div>
-        <div class="prog-label" id="proc-label">処理中...</div>
-      </div>
-      <div class="inline-status" id="proc-status"></div>
-      <div class="action-sep"></div>
       <button class="btn-ghost" id="btn-dl" onclick="downloadResult()" disabled>
         <span id="t-btn-dl">結果を保存</span>
       </button>
@@ -217,7 +221,7 @@
         <div class="credits-body">
           <p class="credits-section-label" id="t-credits-models-label">Filters</p>
           <p class="credits-line">Sharp — <a href="https://github.com/limitlesslab/AI-upscaling-models/releases/tag/PureVision" target="_blank" rel="noopener"><strong>1x_PureVision</strong></a></p>
-          <p class="credits-line">Natural — <a href="https://github.com/limitlesslab/AI-upscaling-models/releases/tag/PureVision" target="_blank" rel="noopener"><strong>2x_PureVision</strong></a></p>
+          <p class="credits-line">Soft — <a href="https://github.com/limitlesslab/AI-upscaling-models/releases/tag/PureVision" target="_blank" rel="noopener"><strong>2x_PureVision</strong></a></p>
           <p class="credits-line" id="t-filter-b-note">(Output is resized to match the original image.)</p>
           <p class="credits-line" id="t-credits-by">Models by <a href="https://github.com/limitlesslab/AI-upscaling-models/releases/tag/PureVision" target="_blank" rel="noopener">limitlesslab</a></p>
           <p class="credits-line" id="t-credits-license">License: CC BY-NC-SA 4.0</p>

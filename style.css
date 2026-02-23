@@ -250,7 +250,7 @@ a:hover { text-decoration: underline; }
   border: 1px solid var(--cream-border);
   border-radius: 3px;
   padding: 1px 5px;
-  font-family: monospace;
+  font-family: var(--font-ui);
   font-size: clamp(11px, 0.9vw, 13px);
   color: var(--text-light-2);
 }
@@ -574,6 +574,7 @@ a:hover { text-decoration: underline; }
 }
 .model-btn {
   padding: 8px 6px;
+  min-height: 36px;
   border-radius: 6px;
   border: 1px solid var(--line);
   background: transparent;
@@ -601,34 +602,6 @@ a:hover { text-decoration: underline; }
   color: var(--accent-dim);
 }
 .model-btn:disabled { opacity: 0.35; cursor: default; pointer-events: none; }
-
-/* ── Load button ─────────────────────────────────────────── */
-.btn-load {
-  width: 100%;
-  padding: 9px 12px;
-  background: transparent;
-  border: 1px solid var(--line);
-  border-radius: 6px;
-  color: var(--text-2);
-  font-family: var(--font-ui);
-  font-size: clamp(12px, 0.95vw, 14px);
-  font-weight: 500;
-  cursor: pointer;
-  transition: border-color 0.13s, background 0.13s, color 0.13s;
-  text-align: center;
-  letter-spacing: 0.01em;
-}
-.btn-load:hover:not(:disabled) {
-  border-color: var(--accent-bd);
-  background: var(--accent-bg);
-  color: var(--accent-dim);
-}
-.btn-load:disabled { opacity: 0.38; cursor: default; }
-/* Loaded state — clearly settled, not actionable */
-.btn-load.btn-load--loaded {
-  opacity: 0.38;
-  cursor: default;
-}
 
 /* ── Progress ────────────────────────────────────────────── */
 .prog-wrap { display: none; }
@@ -665,6 +638,14 @@ a:hover { text-decoration: underline; }
   pointer-events: none;
 }
 .sb-group--muted input[type=range] { cursor: default; }
+
+/* Status area below process button — fixed height prevents layout shift */
+.status-area {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-height: 56px;
+}
 
 .slider-track {
   position: relative;
@@ -747,13 +728,13 @@ input[type=range].styled::-moz-range-thumb {
 /* ── Danger / Ghost / etc. ───────────────────────────────── */
 .btn-danger {
   width: 100%;
-  padding: 9px 14px;
+  padding: 11px 14px;
   background: transparent;
   border: 1px solid rgba(217,92,114,0.22);
   border-radius: 6px;
   color: var(--red);
   font-family: var(--font-ui);
-  font-size: clamp(12px, 0.95vw, 14px);
+  font-size: clamp(13px, 1.0vw, 15px);
   font-weight: 400;
   cursor: pointer;
   transition: background 0.13s, border-color 0.13s;
@@ -781,22 +762,15 @@ input[type=range].styled::-moz-range-thumb {
 }
 .btn-ghost:disabled { opacity: 0.18; cursor: default; }
 
-.action-sep {
-  height: 1px;
-  background: var(--line);
-  margin: 0;
-  opacity: 0.6;
-}
-
 /* ── Inline status ───────────────────────────────────────── */
 .inline-status {
   font-size: clamp(12px, 0.9vw, 13px);
   color: var(--text-2);
-  min-height: 14px;
   line-height: 1.5;
   font-weight: 300;
 }
-.inline-status.err  { color: var(--red); }
+.inline-status.err      { color: var(--red); }
+.strength-hint          { opacity: 0.7; font-style: italic; }
 
 /* ── Spacer ──────────────────────────────────────────────── */
 .sb-spacer { flex: 1; min-height: 12px; }

@@ -5,18 +5,15 @@ let worker = null;
 // ── i18n ─────────────────────────────────────────────────────
 const TX = {
   ja: {
-    'logo':              '画像圧縮ノイズ除去',
+    'logo':              '圧縮ノイズ除去',
     'drag':              'ここにドロップ',
     'drop-label':        '画像をドロップ',
     'drop-sub':          'クリックしてファイルを選択 &nbsp;·&nbsp; <kbd>Ctrl+V</kbd> でペースト',
     'before':            '除去前',
     'after':             '除去後',
-    'sb-filter':         'フィルタ',
+    'sb-filter':         'フィルタを選択',
     'fchoice-a':         'シャープ',
-    'fchoice-b':         '自然（低速）',
-    'btn-load':          'フィルタを読み込む',
-    'btn-load-loading':  '読み込み中...',
-    'btn-load-loaded':   '読み込み済み',
+    'fchoice-b':         'ソフト（低速）',
     'sb-strength':       '除去の強さ',
     'str-lo':            '元の画像（0%）',
     'str-hi':            '最大除去（100%）',
@@ -25,7 +22,7 @@ const TX = {
     'btn-dl':            '結果を保存',
     'btn-clear':         '画像をクリア',
     'side-orig':         '元の画像',
-    'side-done':         f => f === 'a' ? 'シャープ フィルタ 適用済み' : '自然 フィルタ 適用済み',
+    'side-done':         f => f === 'a' ? 'シャープ 適用済み' : 'ソフト 適用済み',
     'about-title':       'このツールについて',
     'sb-desc-1':         '画像の圧縮アーティファクトやノイズを除去します。',
     'sb-desc-2':         'ブラウザ内で完結します。選択したフィルタ（約32 MB）は初回のみダウンロードされ、ローカルに保存されます。',
@@ -42,6 +39,11 @@ const TX = {
     'bl-original':             '元の解像度',
     'bl-displayed':            '表示サイズ',
     'px-dims':           (w, h) => `${w} × ${h} px`,
+    'filter-dl':         p      => `フィルタをダウンロード中... ${p}%`,
+    'filter-loading':           'フィルタを読み込み中...',
+    'filter-ready':             'フィルタ読み込み完了',
+    'filter-err':               'フィルタの読み込みに失敗しました。',
+    'strength-hint':            'スライダーはリアルタイムで反映されます。',
     'proc-pct':          p      => `処理中... ${p}%`,
     'proc-ok':           s      => `${s}秒で完了しました`,
     'toast-dl':          '保存しました',
@@ -55,18 +57,15 @@ const TX = {
     'mwarn-btn':         '続けて試す',
   },
   en: {
-    'logo':              'Image Artifact Removal',
+    'logo':              'Artifact Removal',
     'drag':              'Drop image here',
     'drop-label':        'Drop an image here',
     'drop-sub':          'Click to browse &nbsp;·&nbsp; paste with <kbd>Ctrl+V</kbd>',
     'before':            'Before',
     'after':             'After',
-    'sb-filter':         'Filter',
+    'sb-filter':         'Select filter',
     'fchoice-a':         'Sharp',
-    'fchoice-b':         'Natural (slower)',
-    'btn-load':          'Load filter',
-    'btn-load-loading':  'Loading...',
-    'btn-load-loaded':   'Loaded',
+    'fchoice-b':         'Soft (slower)',
     'sb-strength':       'Correction strength',
     'str-lo':            'Original image (0%)',
     'str-hi':            'Full correction (100%)',
@@ -75,7 +74,7 @@ const TX = {
     'btn-dl':            'Save result',
     'btn-clear':         'Clear image',
     'side-orig':         'Original image',
-    'side-done':         f => f === 'a' ? 'Sharp filter applied' : 'Natural filter applied',
+    'side-done':         f => f === 'a' ? 'Sharp filter applied' : 'Soft filter applied',
     'about-title':       'About this tool',
     'sb-desc-1':         'Removes compression artifacts and noise from images.',
     'sb-desc-2':         'Runs entirely in the browser. The selected filter (~32 MB) is downloaded once and stored locally.',
@@ -92,6 +91,11 @@ const TX = {
     'bl-original':             'Input resolution',
     'bl-displayed':            'Rendered size',
     'px-dims':           (w, h) => `${w} × ${h} px`,
+    'filter-dl':         p      => `Downloading filter... ${p}%`,
+    'filter-loading':           'Loading filter...',
+    'filter-ready':             'Filter ready',
+    'filter-err':               'Failed to load filter.',
+    'strength-hint':            'Slider adjusts the result in real time.',
     'proc-pct':          p      => `Processing... ${p}%`,
     'proc-ok':           s      => `Completed in ${s}s`,
     'toast-dl':          'Saved',
@@ -122,7 +126,6 @@ const tMap = {
   't-sb-filter':               'sb-filter',
   't-fchoice-a':               'fchoice-a',
   't-fchoice-b':               'fchoice-b',
-  't-btn-load':                'btn-load',
   't-sb-strength':             'sb-strength',
   't-str-lo':                  'str-lo',
   't-str-hi':                  'str-hi',
@@ -146,6 +149,7 @@ const tMap = {
   't-mwarn-title':             'mwarn-title',
   't-mwarn-body':              'mwarn-body',
   't-mwarn-btn':               'mwarn-btn',
+  't-strength-hint':           'strength-hint',
 };
 
 function applyLang() {
@@ -155,8 +159,15 @@ function applyLang() {
     const el = document.getElementById(id);
     if (el) el.innerHTML = t(key);
   }
-  syncFilterUI();
   if (S.lastElapsed !== null) $('proc-status').textContent = t('proc-ok', S.lastElapsed);
+  // Re-translate filter status if it's currently showing
+  if (S.filterStatusState) {
+    const fs = S.filterStatusState;
+    const el = $('filter-status');
+    el.textContent = fs.suffix
+      ? t(fs.key) + fs.suffix
+      : (fs.arg !== undefined ? t(fs.key, fs.arg) : t(fs.key));
+  }
   updateStateGrid();
   updateProcessBtn();
   updateGpuStatus();
@@ -173,23 +184,25 @@ function setLang(l) {
 
 // ── State ─────────────────────────────────────────────────────
 const S = {
-  inputFilename:   'image',
-  filterChoice:    'a',
-  filterLoaded:    null,
-  filterReady:     false,
-  filterLoading:   false,
-  inputImg:        null,
-  alphaMask:       null,
-  processedImg:    null,
-  processedFor:    null,
-  processedFilter: null,
-  strength:        80,
-  imageState:      'none',
-  lastElapsed:     null,
-  sliderPct:       50,
-  dragging:        false,
-  processing:      false,
-  t0:              0,
+  inputFilename:    'image',
+  filterChoice:     'a',
+  filterLoaded:     null,
+  filterReady:      false,
+  filterLoading:    false,
+  processAfterLoad: false,
+  filterStatusState: null,
+  inputImg:         null,
+  alphaMask:        null,
+  processedImg:     null,
+  processedFor:     null,
+  processedFilter:  null,
+  strength:         80,
+  imageState:       'none',
+  lastElapsed:      null,
+  sliderPct:        50,
+  dragging:         false,
+  processing:       false,
+  t0:               0,
 };
 
 // ── DOM helpers ───────────────────────────────────────────────
@@ -209,6 +222,15 @@ function setStrengthEnabled(on) {
   $('strength').disabled = !on;
 }
 
+function setFilterStatus(key, arg, isErr) {
+  S.filterStatusState = key ? { key, arg, isErr } : null;
+  const el  = $('filter-status');
+  const txt = key ? (arg !== undefined ? t(key, arg) : t(key)) : '';
+  el.textContent   = txt;
+  el.className     = 'inline-status' + (isErr ? ' err' : '');
+  el.style.display = txt ? '' : 'none';
+}
+
 // ── Worker message handler ────────────────────────────────────
 function handleWorkerMsg({ data: msg }) {
   switch (msg.type) {
@@ -217,12 +239,24 @@ function handleWorkerMsg({ data: msg }) {
       console.log('[worker]', msg.msg);
       break;
 
+    case 'dl-progress':
+      setFilterStatus('filter-dl', msg.pct);
+      break;
+
+    case 'dl-done':
+      setFilterStatus('filter-loading');
+      break;
+
     case 'load-ok':
       S.filterReady   = true;
       S.filterLoading = false;
       S.filterLoaded  = S.filterChoice;
-      syncFilterUI();
+      setFilterStatus('filter-ready');
       updateProcessBtn();
+      if (S.processAfterLoad) {
+        S.processAfterLoad = false;
+        processImage();
+      }
       break;
 
     case 'proc-progress':
@@ -268,12 +302,14 @@ function handleWorkerMsg({ data: msg }) {
 
     case 'error':
       if (S.filterLoading) {
-        S.filterLoading = false;
-        syncFilterUI();
-        const ls     = $('load-status');
-        ls.textContent   = t('load-err') + ' (' + msg.message + ')';
-        ls.className     = 'inline-status err';
-        ls.style.display = '';
+        S.filterLoading    = false;
+        S.processAfterLoad = false;
+        S.filterStatusState = { key: 'filter-err', suffix: ' (' + msg.message + ')', isErr: true };
+        const el = $('filter-status');
+        el.textContent   = t('filter-err') + ' (' + msg.message + ')';
+        el.className     = 'inline-status err';
+        el.style.display = '';
+        updateProcessBtn();
       } else if (S.processing) {
         $('proc-status').textContent = t('proc-err') + ' ' + msg.message;
         $('proc-status').className   = 'inline-status err';
@@ -303,22 +339,17 @@ function selectFilter(choice) {
   S.filterChoice = choice;
   $('fchoice-a').classList.toggle('active', choice === 'a');
   $('fchoice-b').classList.toggle('active', choice === 'b');
-  syncFilterUI();
-  updateProcessBtn();
-}
-
-function syncFilterUI() {
-  if (S.filterLoading) {
-    $('btn-load').disabled    = true;
-    $('btn-load').textContent = t('btn-load-loading');
-    $('btn-load').classList.remove('btn-load--loaded');
-    return;
+  if (S.filterLoaded === choice) {
+    // Switching back to the already-loaded filter
+    S.filterReady = true;
+    setFilterStatus('filter-ready');
+  } else {
+    // Switching to a different filter — hide ready status but keep filterLoaded
+    // so switching back can detect it without re-loading
+    S.filterReady = false;
+    setFilterStatus(null);
   }
-  const selectedReady = S.filterReady && S.filterLoaded === S.filterChoice;
-  $('btn-load').disabled    = selectedReady;
-  $('btn-load').textContent = selectedReady ? t('btn-load-loaded') : t('btn-load');
-  $('btn-load').classList.toggle('btn-load--loaded', selectedReady);
-  updateGpuStatus();
+  updateProcessBtn();
 }
 
 // ── Filter loading ────────────────────────────────────────────
@@ -328,10 +359,9 @@ function loadFilter() {
   S.filterLoading = true;
   S.filterReady   = false;
   S.filterLoaded  = null;
-  const ls = $('load-status');
-  ls.textContent   = '';
-  ls.style.display = 'none';
-  syncFilterUI();
+  $('proc-status').textContent = '';
+  $('proc-status').className   = 'inline-status';
+  setFilterStatus('filter-dl', 0);
   updateProcessBtn();
   worker = new Worker('./worker.js');
   worker.onmessage = handleWorkerMsg;
@@ -428,13 +458,14 @@ function updateStateGrid() {
 
 function clearImage() {
   if (!S.inputImg) return;
-  S.inputImg        = null;
-  S.alphaMask       = null;
-  S.processedImg    = null;
-  S.processedFor    = null;
-  S.processedFilter = null;
-  S.imageState      = 'none';
-  S.lastElapsed     = null;
+  S.inputImg         = null;
+  S.alphaMask        = null;
+  S.processedImg     = null;
+  S.processedFor     = null;
+  S.processedFilter  = null;
+  S.imageState       = 'none';
+  S.lastElapsed      = null;
+  S.processAfterLoad = false;
   resetStrength();
   setStrengthEnabled(false);
   $('btn-process').classList.remove('done');
@@ -451,7 +482,6 @@ function clearImage() {
 }
 
 function updateProcessBtn() {
-  const selectedReady  = S.filterReady && S.filterLoaded === S.filterChoice;
   const hasFreshResult = S.processedImg
     && S.processedFor    === S.inputImg
     && S.processedFilter === S.filterChoice;
@@ -461,7 +491,7 @@ function updateProcessBtn() {
     btn.disabled = true;
     btn.classList.add('done');
   } else {
-    btn.disabled = !(selectedReady && S.inputImg && !S.processing);
+    btn.disabled = !(S.inputImg && !S.processing && !S.filterLoading);
     btn.classList.remove('done');
   }
   requestAnimationFrame(() => { btn.style.transition = ''; });
@@ -551,12 +581,23 @@ $('strength').addEventListener('input', function () {
 
 // ── Process / cancel ──────────────────────────────────────────
 function processImage() {
-  if (!S.filterReady || S.filterLoaded !== S.filterChoice || !S.inputImg || S.processing) return;
+  if (!S.inputImg || S.processing) return;
+
+  // Filter not ready — trigger load first, then auto-process on completion
+  if (!S.filterReady || S.filterLoaded !== S.filterChoice) {
+    if (S.filterLoading) return;
+    S.processAfterLoad = true;
+    loadFilter();
+    return;
+  }
+
+  // Fresh result already exists for this image + filter — just re-apply blend
   if (S.processedImg && S.processedFor === S.inputImg && S.processedFilter === S.filterChoice) {
     applyBlend();
     $('btn-dl').disabled = false;
     return;
   }
+
   S.processing = true;
   updateProcessBtn();
   $('btn-clear').disabled        = true;
@@ -579,11 +620,12 @@ function processImage() {
 function cancelProcessing() {
   if (!S.processing) return;
   worker.terminate();
-  worker          = null;
-  S.filterReady   = false;
-  S.filterLoaded  = null;
-  S.filterLoading = false;
-  syncFilterUI();
+  worker             = null;
+  S.filterReady      = false;
+  S.filterLoaded     = null;
+  S.filterLoading    = false;
+  S.processAfterLoad = false;
+  updateGpuStatus();
   endProcessing(true);
 }
 
@@ -610,7 +652,7 @@ function downloadResult() {
   c.getContext('2d').putImageData(b, 0, 0);
   const filterName = S.processedFilter === 'a'
     ? (lang === 'ja' ? 'シャープ' : 'sharp')
-    : (lang === 'ja' ? '自然'     : 'natural');
+    : (lang === 'ja' ? 'ソフト'   : 'soft');
   const sfx = lang === 'ja'
     ? `_除去_${filterName}_${S.strength}`
     : `_denoised_${filterName}_${S.strength}`;
@@ -715,3 +757,10 @@ if (savedLang === 'ja' || savedLang === 'en') {
 }
 
 applyLang();
+
+// Explicitly reset button states on every page load. The browser's form state
+// restoration can leave buttons visually enabled from the previous session while
+// JS state is reset to empty — this ensures they always match the actual state.
+$('btn-dl').disabled    = true;
+$('btn-clear').disabled = true;
+$('btn-process').classList.remove('done');

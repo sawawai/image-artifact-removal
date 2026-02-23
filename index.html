@@ -1,0 +1,319 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>圧縮ノイズ除去 / Artifact Removal</title>
+<meta name="description" content="Browser-based AI compression artifact and noise removal for images. Runs entirely locally, nothing uploaded.">
+<meta property="og:title" content="圧縮ノイズ除去 / Artifact Removal">
+<meta property="og:description" content="AI compression artifact removal running entirely in the browser. No uploads. Powered by ONNX Runtime Web and PureVision models.">
+<meta property="og:type" content="website">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🖼️</text></svg>">
+
+<!-- COI bootstrap — must be inline and first -->
+<script>
+(function () {
+  if (!('serviceWorker' in navigator)) return;
+  if (window.crossOriginIsolated) return;
+  navigator.serviceWorker.register('./sw.js?v=2').then(function () {
+    if (!window.crossOriginIsolated) {
+      if (!sessionStorage.getItem('coi-reloaded')) {
+        sessionStorage.setItem('coi-reloaded', '1');
+        location.reload();
+      }
+    }
+  }).catch(function (err) {
+    console.warn('COI service worker registration failed:', err);
+  });
+}());
+</script>
+
+<link rel="stylesheet" href="fonts/fonts.css">
+<link rel="stylesheet" href="style.css?v=8">
+</head>
+<body>
+
+<noscript>
+  <div style="position:fixed;inset:0;display:flex;align-items:center;justify-content:center;background:#0e0f18;color:#dde0f0;font-family:sans-serif;font-size:1rem;text-align:center;padding:2rem;z-index:9999">
+    This tool requires JavaScript to run AI inference in your browser.<br>Please enable JavaScript and reload the page.
+  </div>
+</noscript>
+
+<input type="file" id="file-input" accept=".jpg,.jpeg,.png,.webp,.avif,image/jpeg,image/png,image/webp,image/avif">
+<div id="drag-overlay"><span id="t-drag">ここにドロップ</span></div>
+
+<div id="toast" aria-hidden="true"></div>
+
+<div id="mobile-warning" role="alertdialog" aria-modal="true" aria-labelledby="t-mwarn-title">
+  <div class="mwarn-box">
+    <div class="mwarn-icon">
+      <svg width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24">
+        <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/>
+        <line x1="12" y1="9" x2="12" y2="13"/>
+        <line x1="12" y1="17" x2="12.01" y2="17"/>
+      </svg>
+    </div>
+    <div class="mwarn-title" id="t-mwarn-title">このツールはデスクトップ向けです</div>
+    <div class="mwarn-body" id="t-mwarn-body">このツールはブラウザ内で直接画像を処理するため、デスクトップ向けに設計されています。モバイルデバイスでは非常に遅くなるか、動作しない場合があります。デスクトップまたはノートPCでのご利用を推奨します。</div>
+    <button class="mwarn-btn" id="t-mwarn-btn" onclick="dismissMobileWarning()">続けて試す</button>
+  </div>
+</div>
+
+<div class="app">
+
+  <!-- ── CANVAS AREA ─────────────────────────────────────────── -->
+  <div class="canvas-area" id="canvas-area">
+
+    <div class="drop-idle" id="drop-idle" onclick="document.getElementById('file-input').click()">
+      <div class="drop-circle">
+        <svg width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.3" viewBox="0 0 24 24">
+          <rect x="3" y="3" width="18" height="18" rx="2"/>
+          <path d="M3 15l5-5 4 4 3-3 6 6"/>
+          <circle cx="8.5" cy="8.5" r="1.3"/>
+        </svg>
+      </div>
+      <div class="drop-label" id="t-drop-label">画像をドロップ</div>
+      <div class="drop-sub" id="t-drop-sub">
+        クリックしてファイルを選択 &nbsp;·&nbsp; <kbd>Ctrl+V</kbd> でペースト
+      </div>
+    </div>
+
+    <div class="viewer" id="viewer">
+      <canvas id="cv-before"></canvas>
+      <canvas id="cv-after"></canvas>
+      <div class="viewer-divider" id="vdivider">
+        <div class="viewer-handle">
+          <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.2" viewBox="0 0 24 24">
+            <path d="M9 18l-6-6 6-6M15 6l6 6-6 6"/>
+          </svg>
+        </div>
+      </div>
+      <div class="vtag-before" id="t-before">除去前</div>
+      <div class="vtag-after"  id="t-after">除去後</div>
+    </div>
+
+    <!-- TL corner tag -->
+    <div class="canvas-tag canvas-tag-tl" id="img-info-section" style="display:none">
+      <div class="ctag-row">
+        <span class="ctag-label" id="side-left-val">元の画像</span>
+      </div>
+    </div>
+
+    <!-- TR corner tag -->
+    <div class="canvas-tag canvas-tag-tr" id="canvas-tag-tr" style="display:none">
+      <div class="ctag-row">
+        <span class="ctag-label" id="canvas-side-right-val">—</span>
+      </div>
+    </div>
+
+    <!-- BL corner tag — image dimensions -->
+    <div class="canvas-tag canvas-tag-bl" id="canvas-tag-bl" style="display:none">
+      <div class="ctag-dim-row">
+        <span class="ctag-micro" id="t-bl-original">元の解像度</span>
+        <span class="ctag-dim" id="iinfo-dim">—</span>
+      </div>
+      <div class="ctag-dim-row">
+        <span class="ctag-micro" id="t-bl-displayed">表示サイズ</span>
+        <span class="ctag-dim ctag-dim-2" id="iinfo-disp">—</span>
+      </div>
+    </div>
+
+    <!-- Hidden nodes required by JS/observer -->
+    <div style="display:none" aria-hidden="true">
+      <div id="img-state-grid" style="display:none">
+        <span id="side-right-val">—</span>
+      </div>
+    </div>
+
+  </div><!-- /canvas-area -->
+
+  <!-- ── SIDEBAR ─────────────────────────────────────────────── -->
+  <aside class="sidebar">
+
+    <div class="sb-top">
+      <div class="logo" id="t-logo">圧縮ノイズ除去</div>
+      <div class="lang-switch">
+        <button class="active" onclick="setLang('ja')">日本語</button>
+        <button onclick="setLang('en')">English</button>
+      </div>
+    </div>
+
+    <div class="sb-intro">
+      <p class="sb-desc" id="t-sb-desc-1">画像の圧縮アーティファクトやノイズを除去します。</p>
+      <p class="sb-desc" id="t-sb-desc-2">ブラウザ内で完結します。選択したフィルタ（約32 MB）は初回のみダウンロードされ、ローカルに保存されます。</p>
+      <p class="sb-desc" id="t-sb-desc-3">GPUが利用可能な場合はGPUで処理します。GPUがない場合は処理に時間がかかる場合があります。</p>
+      <div class="gpu-banner" id="gpu-banner" aria-live="polite">
+        <span class="gpu-banner-dot" id="gpu-banner-dot"></span>
+        <span class="gpu-banner-text" id="t-gpu-status"></span>
+      </div>
+    </div>
+
+    <div class="sb-group">
+      <div class="group-label" id="t-sb-filter">モデル</div>
+      <div class="model-toggle">
+        <button class="model-btn active" id="fchoice-a" onclick="selectFilter('a')">
+          <span class="model-btn-name" id="t-fchoice-a">Sharp</span>
+        </button>
+        <button class="model-btn" id="fchoice-b" onclick="selectFilter('b')">
+          <span class="model-btn-name" id="t-fchoice-b">Natural (slower)</span>
+        </button>
+      </div>
+      <button class="btn-load" id="btn-load" onclick="loadFilter()">
+        <span id="t-btn-load">Load filter</span>
+      </button>
+      <div class="inline-status" id="load-status" style="display:none"></div>
+    </div>
+
+    <div class="sb-group sb-group--muted" id="strength-section">
+      <div class="group-label strength-group-header">
+        <span id="t-sb-strength">除去の強さ</span>
+        <span class="strength-num" id="str-num">80%</span>
+      </div>
+      <div class="slider-track">
+        <div class="slider-fill-bar" id="slider-fill" style="width:80%"></div>
+        <input type="range" class="styled" id="strength" min="0" max="100" value="80" step="10" disabled>
+      </div>
+      <div style="display:none">
+        <span id="t-str-lo">元の画像</span>
+        <span id="t-str-hi">最大除去</span>
+      </div>
+    </div>
+
+    <div class="sb-group">
+      <button class="btn-primary" id="btn-process" onclick="processImage()" disabled>
+        <span id="t-btn-process">ノイズを除去</span>
+      </button>
+      <button class="btn-danger" id="btn-cancel" onclick="cancelProcessing()" style="display:none">
+        <span id="t-btn-cancel">キャンセル</span>
+      </button>
+      <div class="prog-wrap" id="proc-prog">
+        <div class="prog-bar"><div class="prog-fill" id="proc-fill"></div></div>
+        <div class="prog-label" id="proc-label">処理中...</div>
+      </div>
+      <div class="inline-status" id="proc-status"></div>
+      <div class="action-sep"></div>
+      <button class="btn-ghost" id="btn-dl" onclick="downloadResult()" disabled>
+        <span id="t-btn-dl">結果を保存</span>
+      </button>
+      <button class="btn-ghost" id="btn-clear" onclick="clearImage()" disabled>
+        <span id="t-btn-clear">画像をクリア</span>
+      </button>
+    </div>
+
+    <div class="sb-spacer"></div>
+
+    <div class="sb-credits-wrap">
+      <details class="credits-details">
+        <summary class="credits-summary">
+          <span id="t-about-title">このツールについて</span>
+          <svg class="caret" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M6 9l6 6 6-6"/>
+          </svg>
+        </summary>
+        <div class="credits-body">
+          <p class="credits-section-label" id="t-credits-models-label">Filters</p>
+          <p class="credits-line">Sharp — <a href="https://github.com/limitlesslab/AI-upscaling-models/releases/tag/PureVision" target="_blank" rel="noopener"><strong>1x_PureVision</strong></a></p>
+          <p class="credits-line">Natural — <a href="https://github.com/limitlesslab/AI-upscaling-models/releases/tag/PureVision" target="_blank" rel="noopener"><strong>2x_PureVision</strong></a></p>
+          <p class="credits-line" id="t-filter-b-note">(Output is resized to match the original image.)</p>
+          <p class="credits-line" id="t-credits-by">Models by <a href="https://github.com/limitlesslab/AI-upscaling-models/releases/tag/PureVision" target="_blank" rel="noopener">limitlesslab</a></p>
+          <p class="credits-line" id="t-credits-license">License: CC BY-NC-SA 4.0</p>
+
+          <p class="credits-section-label" style="margin-top:10px" id="t-credits-inference-label">Runtime</p>
+          <p class="credits-line"><a href="https://onnxruntime.ai/" target="_blank" rel="noopener">ONNX Runtime Web</a></p>
+          <p class="credits-line" id="t-credits-gpu-note-1">Uses WebGPU when available</p>
+          <p class="credits-line" id="t-credits-gpu-note-2">Falls back to CPU otherwise</p>
+        </div>
+      </details>
+    </div>
+
+  </aside>
+
+</div><!-- /app -->
+
+<script src="app.js"></script>
+
+<script>
+(function () {
+  function init() {
+    var ca      = document.getElementById('canvas-area');
+    var vd      = document.getElementById('vdivider');
+    var tlTag   = document.getElementById('img-info-section');
+    var trTag   = document.getElementById('canvas-tag-tr');
+    var blTag   = document.getElementById('canvas-tag-bl');
+    var srcRVal = document.getElementById('side-right-val');
+    var dstRVal = document.getElementById('canvas-side-right-val');
+    var srcGrid = document.getElementById('img-state-grid');
+
+    if (!ca || !vd) return;
+
+    function syncDivider() {
+      var caRect = ca.getBoundingClientRect();
+      if (caRect.width === 0) return;
+      var vdRect = vd.getBoundingClientRect();
+      var x = vdRect.left + vdRect.width * 0.5 - caRect.left;
+      ca.style.setProperty('--divider-x', x + 'px');
+
+      if (tlTag && tlTag.style.display !== 'none') {
+        var tlRect  = tlTag.getBoundingClientRect();
+        var tlLeft  = tlRect.left  - caRect.left;
+        var tlRight = tlRect.right - caRect.left;
+        var rClip   = Math.max(0, tlRight - x);
+        tlTag.style.clipPath = 'inset(-4px ' + rClip + 'px -4px 0)';
+      }
+      if (trTag && trTag.style.display !== 'none') {
+        var trLeft = trTag.getBoundingClientRect().left - caRect.left;
+        var lClip  = Math.max(0, x - trLeft);
+        trTag.style.clipPath = 'inset(-4px 0 -4px ' + lClip + 'px)';
+      }
+    }
+
+    function syncRightContent() {
+      if (srcRVal && dstRVal) dstRVal.textContent = srcRVal.textContent;
+    }
+
+    function syncTR() {
+      if (!srcGrid || !trTag) return;
+      var vis = srcGrid.style.display !== 'none' && srcGrid.style.display !== '';
+      trTag.style.display = vis ? 'flex' : 'none';
+      if (vis) syncDivider();
+    }
+
+    function syncBL() {
+      if (!tlTag || !blTag) return;
+      var vis = tlTag.style.display !== 'none' && tlTag.style.display !== '';
+      blTag.style.display = vis ? 'grid' : 'none';
+    }
+
+    new MutationObserver(syncDivider)
+      .observe(vd, { attributes: true, attributeFilter: ['style'] });
+    new MutationObserver(function () {
+      syncBL();
+      if (tlTag.style.display === 'none' || tlTag.style.display === '') {
+        tlTag.style.clipPath = '';
+      }
+      syncDivider();
+    }).observe(tlTag, { attributes: true, attributeFilter: ['style'] });
+
+    new MutationObserver(function () {
+      syncRightContent();
+      if (srcGrid.style.display === 'none' || srcGrid.style.display === '') {
+        if (trTag) trTag.style.clipPath = '';
+      }
+      syncTR();
+    }).observe(srcGrid, { attributes: true, attributeFilter: ['style'],
+                          subtree: true, childList: true, characterData: true });
+
+    window.addEventListener('resize', syncDivider);
+    syncDivider(); syncTR(); syncBL(); syncRightContent();
+  }
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', init);
+  } else {
+    init();
+  }
+}());
+</script>
+
+</body>
+</html>

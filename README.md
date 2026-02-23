@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 # Image Artifact Removal
 
 Browser-based compression artifact and noise removal for images. Runs entirely in the browser. No images are uploaded or transmitted.
@@ -28,3 +29,7 @@ Requires a browser with WebGPU support for fast processing. CPU fallback is avai
 **Runtime:** [ONNX Runtime Web](https://onnxruntime.ai/) by Microsoft. Licensed under MIT.
 
 **Fonts:** Noto Sans JP by Google. Licensed under SIL Open Font License 1.1.
+=======
+# image-artifact-removal
+Browser-based compression artifact and noise removal for images. Runs entirely in the browser. No images are uploaded or transmitted.
+>>>>>>> f340fd7b27af815e850308642444b4eb6938c1dc

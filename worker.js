@@ -11,8 +11,7 @@ const F16OK = typeof Float16Array !== 'undefined';
 
 async function loadModel(modelUrl) {
   const workerDir = self.location.href.substring(0, self.location.href.lastIndexOf('/') + 1);
-  const siteRoot  = workerDir.substring(0, workerDir.lastIndexOf('/vendor/'));
-  ort.env.wasm.wasmPaths  = siteRoot + '/vendor/ort/';
+  ort.env.wasm.wasmPaths  = workerDir + 'vendor/ort/';
   ort.env.wasm.numThreads = Math.max(1, (navigator.hardwareConcurrency || 4) - 1);
 
   const resp = await fetch(modelUrl);

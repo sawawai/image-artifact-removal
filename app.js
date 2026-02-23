@@ -5,7 +5,7 @@ let worker = null;
 // ── i18n ─────────────────────────────────────────────────────
 const TX = {
   ja: {
-    'logo':              '圧縮ノイズ除去',
+    'logo':              '画像圧縮ノイズ除去',
     'drag':              'ここにドロップ',
     'drop-label':        '画像をドロップ',
     'drop-sub':          'クリックしてファイルを選択 &nbsp;·&nbsp; <kbd>Ctrl+V</kbd> でペースト',
@@ -55,7 +55,7 @@ const TX = {
     'mwarn-btn':         '続けて試す',
   },
   en: {
-    'logo':              'Artifact Removal',
+    'logo':              'Image Artifact Removal',
     'drag':              'Drop image here',
     'drop-label':        'Drop an image here',
     'drop-sub':          'Click to browse &nbsp;·&nbsp; paste with <kbd>Ctrl+V</kbd>',

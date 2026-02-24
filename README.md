@@ -1,6 +1,6 @@
 # Image Artifact Removal
 
-Browser-based compression artifact and noise removal for images. Runs entirely in the browser. No images are uploaded or transmitted.
+Browser-based compression artifact and noise removal for images. Processing runs entirely in the browser, noo images are uploaded or transmitted.
 
 [Live site](https://sawawai.github.io/image-artifact-removal)
 
@@ -11,7 +11,7 @@ Images are processed locally using ESRGAN-based denoising models. The selected m
 Two models are available:
 
 - **Sharp** — uses 1x_PureVision. Processes at the original image resolution.
-- **Natural** — uses 2x_PureVision. Processes at 2x resolution and downsamples the result to match the original. Slower.
+- **Soft** — uses 2x_PureVision. Processes at 2x resolution and downsamples the result to match the original.
 
 A strength slider allows blending between the original and processed image after processing is complete. Results can be saved as PNG.
 

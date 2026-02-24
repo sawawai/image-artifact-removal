@@ -17,16 +17,16 @@ const TX = {
     'sb-strength':       '除去の強さ',
     'str-lo':            '元の画像（0%）',
     'str-hi':            '最大除去（100%）',
-    'btn-process':       'ノイズを除去',
+    'btn-process':       '画像ノイズを除去',
     'btn-cancel':        'キャンセル',
     'btn-dl':            '結果を保存',
     'btn-clear':         '画像をクリア',
     'side-orig':         '元の画像',
     'side-done':         f => f === 'a' ? 'シャープ 適用済み' : 'ソフト 適用済み',
     'about-title':       'このツールについて',
-    'sb-desc-1':         '画像の圧縮アーティファクトやノイズを除去します。',
-    'sb-desc-2':         'ブラウザ内で完結します。選択したフィルタ（約32 MB）は初回のみダウンロードされ、ローカルに保存されます。',
-    'sb-desc-3':         'GPUが利用可能な場合はGPUで処理します。GPUがない場合は処理に時間がかかる場合があります。',
+    'sb-desc-1':         '画像の圧縮ノイズやアーティファクトを除去します。',
+    'sb-desc-2':         'ブラウザ内で完結します。選択したフィルタ（約32 MB）は初回のみダウンロードされ、端末に保存されます。',
+    'sb-desc-3':         'GPUが利用可能な場合はGPUで処理します。GPUがない場合、処理にかなり時間がかかることがあります。',
     'credits-models-label':    'フィルタ',
     'filter-b-note':           '（出力は元画像の解像度に合わせて調整されます。）',
     'credits-by':              'モデル提供：limitlesslab',
@@ -43,7 +43,7 @@ const TX = {
     'filter-loading':           'フィルタを読み込み中...',
     'filter-ready':             'フィルタ読み込み完了',
     'filter-err':               'フィルタの読み込みに失敗しました。',
-    'strength-hint':            'スライダーはリアルタイムで反映されます。',
+    'strength-hint':            'リアルタイムで反映されます。',
     'proc-pct':          p      => `処理中... ${p}%`,
     'proc-ok':           s      => `${s}秒で完了しました`,
     'toast-dl':          '保存しました',
@@ -69,7 +69,7 @@ const TX = {
     'sb-strength':       'Correction strength',
     'str-lo':            'Original image (0%)',
     'str-hi':            'Full correction (100%)',
-    'btn-process':       'Remove noise',
+    'btn-process':       'Remove image artifacts',
     'btn-cancel':        'Cancel',
     'btn-dl':            'Save result',
     'btn-clear':         'Clear image',
@@ -95,7 +95,7 @@ const TX = {
     'filter-loading':           'Loading filter...',
     'filter-ready':             'Filter ready',
     'filter-err':               'Failed to load filter.',
-    'strength-hint':            'Slider adjusts the result in real time.',
+    'strength-hint':            'Adjusts the result in real time.',
     'proc-pct':          p      => `Processing... ${p}%`,
     'proc-ok':           s      => `Completed in ${s}s`,
     'toast-dl':          'Saved',
@@ -543,13 +543,21 @@ function setSlider(pct) {
   viewerEl.style.setProperty('--img-bottom-px', (topPx + heightPx) + 'px');
 }
 
-const viewer = $('viewer');
-viewer.addEventListener('mousedown',  e => { S.dragging = true;  doSlide(e); });
-viewer.addEventListener('touchstart', e => { S.dragging = true;  doSlide(e); }, { passive: true });
-window.addEventListener('mousemove',  e => { if (S.dragging) doSlide(e); });
-window.addEventListener('touchmove',  e => { if (S.dragging) doSlide(e); }, { passive: true });
-window.addEventListener('mouseup',    () => S.dragging = false);
-window.addEventListener('touchend',   () => S.dragging = false);
+const viewer  = $('viewer');
+const vdivider = $('vdivider');
+
+vdivider.addEventListener('pointerdown', e => {
+  e.preventDefault();
+  vdivider.setPointerCapture(e.pointerId);
+  S.dragging = true;
+  doSlide(e);
+});
+vdivider.addEventListener('pointermove', e => {
+  if (!S.dragging) return;
+  doSlide(e);
+});
+vdivider.addEventListener('pointerup',     () => S.dragging = false);
+vdivider.addEventListener('pointercancel', () => S.dragging = false);
 
 function doSlide(e) {
   const r  = viewer.getBoundingClientRect();

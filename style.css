@@ -261,7 +261,6 @@ a:hover { text-decoration: underline; }
   position: absolute;
   inset: 0;
   overflow: hidden;
-  cursor: col-resize;
   user-select: none;
 }
 .viewer canvas {
@@ -284,17 +283,29 @@ a:hover { text-decoration: underline; }
     0 10px 40px rgba(38, 24, 4, 0.15);
 }
 
-/* 2px divider — sits on whole pixels, centering is exact */
+/* 80px grab zone centered on the divider line — wide enough to comfortably
+   reach the before/after label edges. The visible 2px line is rendered via
+   ::after so the hit area is much wider than the visual. */
 .viewer-divider {
   position: absolute;
   top: 0; height: 100%;
-  width: 2px;
-  background: rgba(255,255,255,0.80);
+  width: 80px;
   left: 50%;
   transform: translateX(-50%);
-  pointer-events: none;
+  pointer-events: auto;
+  cursor: col-resize;
   z-index: 2;
+}
+.viewer-divider::after {
+  content: '';
+  position: absolute;
+  top: 0; bottom: 0;
+  left: 50%;
+  width: 2px;
+  transform: translateX(-50%);
+  background: rgba(255,255,255,0.80);
   box-shadow: 3px 0 10px rgba(0,0,0,0.40);
+  pointer-events: none;
 }
 .viewer-handle {
   position: absolute;
@@ -488,6 +499,10 @@ a:hover { text-decoration: underline; }
   display: flex;
   flex-direction: column;
   gap: 10px;
+  /* Reserve enough height for the longer language variant so switching
+     languages doesn't shift elements below. Sized for ~4 lines of desc text
+     plus the GPU banner. Adjust if desc content changes significantly. */
+  min-height: 175px;
 }
 /* First desc paragraph — the purpose statement — slightly larger and fully opaque */
 .sb-desc:first-child {

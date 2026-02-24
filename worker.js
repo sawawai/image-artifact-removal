@@ -2,20 +2,32 @@
 
 importScripts('https://cdn.jsdelivr.net/npm/onnxruntime-web@1.24.2/dist/ort.all.min.js');
 
-const TILE = 256;
-const OV   = 32;
+// 512px tiles with 64px overlap → step of 448px.
+// ~3× fewer session.run() calls vs 256px tiles on 1080p images.
+const TILE = 512;
+const OV   = 64;
 
-let session = null;
-let useF16  = true;
-const F16OK = typeof Float16Array !== 'undefined';
+let session     = null;
+let modelScale  = 1;   // 1 for model 'a' (1x_PureVision), 2 for model 'b' (2x_PureVision)
+let isNHWC      = false;
+
+// Models are fp16 — build tile data directly into Float16Array to avoid
+// a separate f32→f16 conversion step. Falls back to f32 if Float16Array
+// is unavailable (very old environments).
+const F16OK   = typeof Float16Array !== 'undefined';
+const tileBuf = F16OK
+  ? new Float16Array(3 * TILE * TILE)   // written directly, no f32 intermediate
+  : new Float32Array(3 * TILE * TILE);
+const DTYPE   = F16OK ? 'float16' : 'float32';
 
 async function loadModel(modelUrl) {
   ort.env.wasm.wasmPaths  = 'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.24.2/dist/';
   ort.env.wasm.numThreads = Math.max(1, (navigator.hardwareConcurrency || 4) - 1);
 
+  // ── Download model ────────────────────────────────────────────
   const resp = await fetch(modelUrl);
   if (!resp.ok) throw new Error('HTTP ' + resp.status + ' fetching model');
-  const total = parseInt(resp.headers.get('Content-Length') || '0');
+  const total  = parseInt(resp.headers.get('Content-Length') || '0');
   const reader = resp.body.getReader();
   const chunks = [];
   let got = 0;
@@ -31,6 +43,10 @@ async function loadModel(modelUrl) {
   for (const c of chunks) { buf.set(c, off); off += c.length; }
   postMessage({ type: 'dl-done' });
 
+  // Scale is determined by which model file was requested — no need to probe
+  modelScale = modelUrl.includes('2x_') ? 2 : 1;
+
+  // ── Select execution providers ────────────────────────────────
   let providers = ['wasm'];
   if (typeof navigator !== 'undefined' && navigator.gpu) {
     try {
@@ -53,24 +69,40 @@ async function loadModel(modelUrl) {
     graphOptimizationLevel: 'all',
   });
 
+  // ── Detect output layout (NCHW vs NHWC) with a warm-up run ───
+  // Firefox's wgpu backend returns NHWC [1,H,W,3] instead of NCHW [1,3,H,W].
+  // Detect once at load time and select the matching blend function.
+  // This also JIT-warms the session before real inference begins.
+  {
+    const inName  = session.inputNames[0];
+    const outName = session.outputNames[0];
+    const probe   = new ort.Tensor(DTYPE, new (F16OK ? Float16Array : Float32Array)(3 * TILE * TILE), [1, 3, TILE, TILE]);
+    const res     = await session.run({ [inName]: probe });
+    const dims    = res[outName].dims;
+    isNHWC = (dims[3] === 3);
+    postMessage({ type: 'log', msg: 'output dims: ' + dims.join(',') + ' isNHWC=' + isNHWC });
+  }
+
   const backend = (providers[0] === 'webgpu') ? 'WebGPU' : 'WASM (CPU)';
   postMessage({ type: 'load-ok', backend });
 }
 
-function buildTile(data, W, tx, ty, tw, th) {
-  const f32  = new Float32Array(3 * th * tw);
-  const area = th * tw;
+// Fill the shared tileBuf (Float16Array or Float32Array) with TILE×TILE CHW data.
+// Valid pixels come from the tw×th region at (tx,ty); rest is zero-padded.
+// Writing directly to Float16Array avoids a separate f32→f16 conversion pass.
+function fillTile(data, W, tx, ty, tw, th) {
+  tileBuf.fill(0);
+  const area = TILE * TILE;
   for (let py = 0; py < th; py++) {
     const srcRow = ((ty + py) * W + tx) * 4;
-    const dstRow = py * tw;
+    const dstRow = py * TILE;
     for (let px = 0; px < tw; px++) {
       const s = srcRow + px * 4;
-      f32[dstRow + px]          = data[s]     / 255;
-      f32[area  + dstRow + px]  = data[s + 1] / 255;
-      f32[2*area + dstRow + px] = data[s + 2] / 255;
+      tileBuf[dstRow + px]          = data[s]     / 255;
+      tileBuf[area  + dstRow + px]  = data[s + 1] / 255;
+      tileBuf[2*area + dstRow + px] = data[s + 2] / 255;
     }
   }
-  return f32;
 }
 
 async function runTiled(imgBuf, W, H) {
@@ -87,78 +119,37 @@ async function runTiled(imgBuf, W, H) {
 
   const inName  = session.inputNames[0];
   const outName = session.outputNames[0];
+  const scale   = modelScale;
+  const outW    = W * scale;
+  const outH    = H * scale;
 
-  let scale = null, outW, outH;
-  let outR, outG, outB, outWt;
+  const outR  = new Float32Array(outW * outH);
+  const outG  = new Float32Array(outW * outH);
+  const outB  = new Float32Array(outW * outH);
+  const outWt = new Float32Array(outW * outH);
+
+  // Select blend function once — avoids a per-pixel branch inside the inner loop
+  const blendTile = isNHWC ? blendNHWC : blendNCHW;
 
   for (let i = 0; i < tiles.length; i++) {
     const { tx, ty, tw, th } = tiles[i];
-    const f32 = buildTile(data, W, tx, ty, tw, th);
+    fillTile(data, W, tx, ty, tw, th);
 
-    let inp = (useF16 && F16OK)
-      ? new ort.Tensor('float16', new Float16Array(f32), [1, 3, th, tw])
-      : new ort.Tensor('float32', f32, [1, 3, th, tw]);
+    const inp = new ort.Tensor(DTYPE, tileBuf, [1, 3, TILE, TILE]);
+    const res = await session.run({ [inName]: inp });
+    const od  = res[outName].data;
 
-    let res;
-    try {
-      res = await session.run({ [inName]: inp });
-    } catch (e) {
-      if (useF16) {
-        useF16 = false;
-        res = await session.run({ [inName]: new ort.Tensor('float32', f32, [1, 3, th, tw]) });
-      } else {
-        throw e;
-      }
-    }
+    const validOW = tw * scale;
+    const validOH = th * scale;
+    const otx     = tx * scale;
+    const oty     = ty * scale;
 
-    const outTensor = res[outName];
-    const od   = outTensor.data;
-    const dims = outTensor.dims;
-    const isNHWC = (dims[3] === 3);
-    const oH = isNHWC ? dims[1] : dims[2];
-    const oW = isNHWC ? dims[2] : dims[3];
+    const wx = new Float32Array(validOW);
+    const wy = new Float32Array(validOH);
+    for (let p = 0; p < validOW; p++) wx[p] = Math.sin(Math.PI * (p + 0.5) / validOW);
+    for (let p = 0; p < validOH; p++) wy[p] = Math.sin(Math.PI * (p + 0.5) / validOH);
 
-    if (i === 0) {
-      postMessage({ type: 'log', msg: 'output dims: ' + dims.join(',') + ' isNHWC=' + isNHWC });
-    }
-
-    if (scale === null) {
-      scale = Math.max(1, Math.round(Math.max(oW / tw, oH / th)));
-      outW  = Math.round(W * scale);
-      outH  = Math.round(H * scale);
-      outR  = new Float32Array(outW * outH);
-      outG  = new Float32Array(outW * outH);
-      outB  = new Float32Array(outW * outH);
-      outWt = new Float32Array(outW * outH);
-      postMessage({ type: 'log', msg: 'scale=' + scale + ' outW=' + outW + ' outH=' + outH });
-    }
-
-    const otx = Math.round(tx * scale);
-    const oty = Math.round(ty * scale);
-    const wx  = new Float32Array(oW);
-    const wy  = new Float32Array(oH);
-    for (let p = 0; p < oW; p++) wx[p] = Math.sin(Math.PI * (p + 0.5) / oW);
-    for (let p = 0; p < oH; p++) wy[p] = Math.sin(Math.PI * (p + 0.5) / oH);
-
-    for (let py = 0; py < oH; py++) {
-      const oy  = oty + py; if (oy >= outH) continue;
-      const db  = oy * outW;
-      const wyp = wy[py];
-      for (let px = 0; px < oW; px++) {
-        const ox = otx + px; if (ox >= outW) continue;
-        const w  = wx[px] * wyp;
-        const di = db + ox;
-        let r, g, b;
-        if (isNHWC) {
-          const base = (py * oW + px) * 3;
-          r = Number(od[base]); g = Number(od[base + 1]); b = Number(od[base + 2]);
-        } else {
-          const ri = py * oW + px, oa = oH * oW;
-          r = Number(od[ri]); g = Number(od[oa + ri]); b = Number(od[2*oa + ri]);
-        }
-        outR[di] += r * w; outG[di] += g * w; outB[di] += b * w; outWt[di] += w;
-      }
-    }
+    blendTile(od, validOW, validOH, otx, oty, outW, outH, wx, wy, outR, outG, outB, outWt);
 
     postMessage({ type: 'proc-progress', pct: (i + 1) / tiles.length * 100 });
   }
@@ -172,6 +163,47 @@ async function runTiled(imgBuf, W, H) {
     result[i*4+3] = 255;
   }
   return { buffer: result.buffer, scale, outW, outH };
+}
+
+// Blend functions — one per layout, selected at load time via function reference.
+
+function blendNHWC(od, validOW, validOH, otx, oty, outW, outH, wx, wy, outR, outG, outB, outWt) {
+  const oW = TILE * modelScale;
+  for (let py = 0; py < validOH; py++) {
+    const oy = oty + py; if (oy >= outH) continue;
+    const db  = oy * outW;
+    const wyp = wy[py];
+    for (let px = 0; px < validOW; px++) {
+      const ox = otx + px; if (ox >= outW) continue;
+      const w    = wx[px] * wyp;
+      const di   = db + ox;
+      const base = (py * oW + px) * 3;
+      outR[di] += Number(od[base])     * w;
+      outG[di] += Number(od[base + 1]) * w;
+      outB[di] += Number(od[base + 2]) * w;
+      outWt[di] += w;
+    }
+  }
+}
+
+function blendNCHW(od, validOW, validOH, otx, oty, outW, outH, wx, wy, outR, outG, outB, outWt) {
+  const oW = TILE * modelScale;
+  const oa = oW * oW;
+  for (let py = 0; py < validOH; py++) {
+    const oy = oty + py; if (oy >= outH) continue;
+    const db  = oy * outW;
+    const wyp = wy[py];
+    for (let px = 0; px < validOW; px++) {
+      const ox = otx + px; if (ox >= outW) continue;
+      const w  = wx[px] * wyp;
+      const di = db + ox;
+      const ri = py * oW + px;
+      outR[di] += Number(od[ri])        * w;
+      outG[di] += Number(od[oa  + ri])  * w;
+      outB[di] += Number(od[2*oa + ri]) * w;
+      outWt[di] += w;
+    }
+  }
 }
 
 self.onmessage = async ({ data: msg }) => {

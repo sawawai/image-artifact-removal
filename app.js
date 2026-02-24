@@ -159,8 +159,7 @@ function applyLang() {
     const el = document.getElementById(id);
     if (el) el.innerHTML = t(key);
   }
-  if (S.lastElapsed !== null && S.processedImg && S.processedFor === S.inputImg && S.processedFilter === S.filterChoice)
-    $('proc-status').textContent = t('proc-ok', S.lastElapsed);
+  updateProcStatus();
   // Re-translate filter status if it's currently showing
   if (S.filterStatusState) {
     const { key, arg, variant = '', suffix = '' } = S.filterStatusState;
@@ -189,6 +188,7 @@ const S = {
   filterLoading:    false,
   processAfterLoad: false,
   filterStatusState: null,
+  procStatusState:   null,
   inputImg:         null,
   alphaMask:        null,
   processedImg:     null,
@@ -218,6 +218,24 @@ function showToast(msg) {
 function setStrengthEnabled(on) {
   $('strength-section').classList.toggle('sb-group--muted', !on);
   $('strength').disabled = !on;
+}
+
+function setProcStatus(key, arg, variant = '', suffix = '') {
+  S.procStatusState = key ? { key, arg, variant, suffix } : null;
+  updateProcStatus();
+}
+
+function updateProcStatus() {
+  const el = $('proc-status');
+  const ps = S.procStatusState;
+  if (!ps) { el.textContent = ''; el.className = 'inline-status'; return; }
+  if (ps.key === 'proc-ok') {
+    const fresh = S.processedImg && S.processedFor === S.inputImg && S.processedFilter === S.filterChoice;
+    if (!fresh) { el.textContent = ''; el.className = 'inline-status'; return; }
+  }
+  const txt = (ps.arg !== undefined ? t(ps.key, ps.arg) : t(ps.key)) + (ps.suffix || '');
+  el.textContent = txt;
+  el.className   = 'inline-status' + (ps.variant ? ' ' + ps.variant : '');
 }
 
 function setFilterStatus(key, arg, variant = '', suffix = '') {
@@ -291,8 +309,7 @@ function handleWorkerMsg({ data: msg }) {
       updateStateGrid();
       setStrengthEnabled(true);
       $('btn-dl').disabled         = false;
-      $('proc-status').textContent = t('proc-ok', S.lastElapsed);
-      $('proc-status').className   = 'inline-status ok';
+      setProcStatus('proc-ok', S.lastElapsed, 'ok');
       showToast(t('toast-ok'));
       endProcessing(false);
       break;
@@ -305,8 +322,7 @@ function handleWorkerMsg({ data: msg }) {
         setFilterStatus('filter-err', undefined, 'err', ' (' + msg.message + ')');
         updateProcessBtn();
       } else if (S.processing) {
-        $('proc-status').textContent = t('proc-err') + ' ' + msg.message;
-        $('proc-status').className   = 'inline-status err';
+        setProcStatus('proc-err', undefined, 'err', ' ' + msg.message);
         endProcessing(false);
       }
       break;
@@ -321,8 +337,7 @@ function endProcessing(cancelled) {
   updateProcessBtn();
   $('btn-clear').disabled = !S.inputImg;
   if (cancelled) {
-    $('proc-status').textContent = t('proc-cancelled');
-    $('proc-status').className   = 'inline-status';
+    setProcStatus('proc-cancelled');
     showToast(t('toast-cancel'));
   }
 }
@@ -343,14 +358,7 @@ function selectFilter(choice) {
     S.filterReady = false;
     setFilterStatus(null);
   }
-  const hasFreshResult = S.processedImg && S.processedFor === S.inputImg && S.processedFilter === choice;
-  if (hasFreshResult && S.lastElapsed !== null) {
-    $('proc-status').textContent = t('proc-ok', S.lastElapsed);
-    $('proc-status').className   = 'inline-status ok';
-  } else {
-    $('proc-status').textContent = '';
-    $('proc-status').className   = 'inline-status';
-  }
+  updateProcStatus();
   updateProcessBtn();
 }
 
@@ -361,8 +369,7 @@ function loadFilter() {
   S.filterLoading = true;
   S.filterReady   = false;
   S.filterLoaded  = null;
-  $('proc-status').textContent = '';
-  $('proc-status').className   = 'inline-status';
+  setProcStatus(null);
   setFilterStatus('filter-dl', 0);
   updateProcessBtn();
   worker = new Worker('./worker.js');
@@ -433,8 +440,7 @@ async function loadFile(file) {
     $('img-info-section').style.display = 'block';
     updateStateGrid();
     $('btn-clear').disabled      = false;
-    $('proc-status').textContent = '';
-    $('proc-status').className   = 'inline-status';
+    setProcStatus(null);
     updateProcessBtn();
   } catch { /* silently ignore invalid files */ }
 }
@@ -473,8 +479,7 @@ function clearImage() {
   $('img-info-section').style.display = 'none';
   $('btn-clear').disabled             = true;
   $('btn-dl').disabled                = true;
-  $('proc-status').textContent        = '';
-  $('proc-status').className          = 'inline-status';
+  setProcStatus(null);
   updateProcessBtn();
 }
 
@@ -604,8 +609,7 @@ function processImage() {
   $('proc-fill').className       = 'prog-fill spin';
   $('proc-fill').style.width     = '';
   $('proc-label').textContent    = t('proc-pct', 0);
-  $('proc-status').textContent   = '';
-  $('proc-status').className     = 'inline-status';
+  setProcStatus(null);
   S.t0 = performance.now();
   const imgBuf = S.inputImg.data.buffer.slice(0);
   worker.postMessage(
@@ -622,6 +626,7 @@ function cancelProcessing() {
   S.filterLoaded     = null;
   S.filterLoading    = false;
   S.processAfterLoad = false;
+  setFilterStatus(null);
   updateGpuStatus();
   endProcessing(true);
 }

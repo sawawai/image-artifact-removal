@@ -36,7 +36,7 @@ async function loadModel(modelUrl) {
     if (done) break;
     chunks.push(value);
     got += value.length;
-    if (total > 0) postMessage({ type: 'dl-progress', pct: Math.round(got / total * 100) });
+    if (total > 0) postMessage({ type: 'dl-progress', pct: Math.min(100, Math.round(got / total * 100)) });
   }
   const buf = new Uint8Array(got);
   let off = 0;

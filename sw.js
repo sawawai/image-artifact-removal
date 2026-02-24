@@ -1,5 +1,3 @@
-const CACHE = 'coi-v5';
-
 self.addEventListener('install', () => self.skipWaiting());
 self.addEventListener('activate', e => e.waitUntil(self.clients.claim()));
 

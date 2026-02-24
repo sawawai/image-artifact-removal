@@ -159,14 +159,12 @@ function applyLang() {
     const el = document.getElementById(id);
     if (el) el.innerHTML = t(key);
   }
-  if (S.lastElapsed !== null) $('proc-status').textContent = t('proc-ok', S.lastElapsed);
+  if (S.lastElapsed !== null && S.processedImg && S.processedFor === S.inputImg && S.processedFilter === S.filterChoice)
+    $('proc-status').textContent = t('proc-ok', S.lastElapsed);
   // Re-translate filter status if it's currently showing
   if (S.filterStatusState) {
-    const fs = S.filterStatusState;
-    const el = $('filter-status');
-    el.textContent = fs.suffix
-      ? t(fs.key) + fs.suffix
-      : (fs.arg !== undefined ? t(fs.key, fs.arg) : t(fs.key));
+    const { key, arg, variant = '', suffix = '' } = S.filterStatusState;
+    setFilterStatus(key, arg, variant, suffix);
   }
   updateStateGrid();
   updateProcessBtn();
@@ -222,12 +220,12 @@ function setStrengthEnabled(on) {
   $('strength').disabled = !on;
 }
 
-function setFilterStatus(key, arg, isErr) {
-  S.filterStatusState = key ? { key, arg, isErr } : null;
+function setFilterStatus(key, arg, variant = '', suffix = '') {
+  S.filterStatusState = key ? { key, arg, variant, suffix } : null;
   const el  = $('filter-status');
-  const txt = key ? (arg !== undefined ? t(key, arg) : t(key)) : '';
+  const txt = key ? (arg !== undefined ? t(key, arg) : t(key)) + suffix : '';
   el.textContent   = txt;
-  el.className     = 'inline-status' + (isErr ? ' err' : '');
+  el.className     = 'inline-status' + (variant ? ' ' + variant : '');
   el.style.display = txt ? '' : 'none';
 }
 
@@ -251,7 +249,7 @@ function handleWorkerMsg({ data: msg }) {
       S.filterReady   = true;
       S.filterLoading = false;
       S.filterLoaded  = S.filterChoice;
-      setFilterStatus('filter-ready');
+      setFilterStatus('filter-ready', undefined, 'ok');
       updateProcessBtn();
       if (S.processAfterLoad) {
         S.processAfterLoad = false;
@@ -294,7 +292,7 @@ function handleWorkerMsg({ data: msg }) {
       setStrengthEnabled(true);
       $('btn-dl').disabled         = false;
       $('proc-status').textContent = t('proc-ok', S.lastElapsed);
-      $('proc-status').className   = 'inline-status';
+      $('proc-status').className   = 'inline-status ok';
       showToast(t('toast-ok'));
       endProcessing(false);
       break;
@@ -304,11 +302,7 @@ function handleWorkerMsg({ data: msg }) {
       if (S.filterLoading) {
         S.filterLoading    = false;
         S.processAfterLoad = false;
-        S.filterStatusState = { key: 'filter-err', suffix: ' (' + msg.message + ')', isErr: true };
-        const el = $('filter-status');
-        el.textContent   = t('filter-err') + ' (' + msg.message + ')';
-        el.className     = 'inline-status err';
-        el.style.display = '';
+        setFilterStatus('filter-err', undefined, 'err', ' (' + msg.message + ')');
         updateProcessBtn();
       } else if (S.processing) {
         $('proc-status').textContent = t('proc-err') + ' ' + msg.message;
@@ -342,12 +336,20 @@ function selectFilter(choice) {
   if (S.filterLoaded === choice) {
     // Switching back to the already-loaded filter
     S.filterReady = true;
-    setFilterStatus('filter-ready');
+    setFilterStatus('filter-ready', undefined, 'ok');
   } else {
     // Switching to a different filter — hide ready status but keep filterLoaded
     // so switching back can detect it without re-loading
     S.filterReady = false;
     setFilterStatus(null);
+  }
+  const hasFreshResult = S.processedImg && S.processedFor === S.inputImg && S.processedFilter === choice;
+  if (hasFreshResult && S.lastElapsed !== null) {
+    $('proc-status').textContent = t('proc-ok', S.lastElapsed);
+    $('proc-status').className   = 'inline-status ok';
+  } else {
+    $('proc-status').textContent = '';
+    $('proc-status').className   = 'inline-status';
   }
   updateProcessBtn();
 }
@@ -382,64 +384,59 @@ function resetStrength() {
 // ── Image loading ─────────────────────────────────────────────
 const ALLOWED_TYPES = new Set(['image/jpeg', 'image/png', 'image/webp', 'image/avif']);
 
-function loadFile(file) {
+async function loadFile(file) {
   if (!file || !ALLOWED_TYPES.has(file.type)) return;
-  S.inputFilename = file.name ? file.name.replace(/\.[^.]+$/, '') : 'image';
-  const reader = new FileReader();
-  reader.onload = e => {
-    const img = new Image();
-    img.onload = () => {
-      const c   = document.createElement('canvas');
-      c.width   = img.naturalWidth;
-      c.height  = img.naturalHeight;
-      const ctx = c.getContext('2d');
-      ctx.drawImage(img, 0, 0);
-      const raw = ctx.getImageData(0, 0, c.width, c.height);
+  S.inputFilename = file.name?.replace(/\.[^.]+$/, '') ?? 'image';
+  try {
+    const bmp = await createImageBitmap(file);
+    const c   = document.createElement('canvas');
+    c.width   = bmp.width;
+    c.height  = bmp.height;
+    c.getContext('2d').drawImage(bmp, 0, 0);
+    bmp.close();
+    const raw = c.getContext('2d').getImageData(0, 0, c.width, c.height);
 
-      let hasAlpha = false;
-      for (let i = 3; i < raw.data.length; i += 4) if (raw.data[i] < 255) { hasAlpha = true; break; }
+    let hasAlpha = false;
+    for (let i = 3; i < raw.data.length; i += 4) if (raw.data[i] < 255) { hasAlpha = true; break; }
 
-      let flatImg;
-      if (hasAlpha) {
-        S.alphaMask = new Uint8Array(raw.data.length / 4);
-        for (let i = 0; i < S.alphaMask.length; i++) S.alphaMask[i] = raw.data[i * 4 + 3];
-        const flat  = document.createElement('canvas');
-        flat.width  = c.width;
-        flat.height = c.height;
-        const fctx  = flat.getContext('2d');
-        fctx.fillStyle = '#ffffff';
-        fctx.fillRect(0, 0, flat.width, flat.height);
-        fctx.drawImage(c, 0, 0);
-        flatImg = fctx.getImageData(0, 0, flat.width, flat.height);
-      } else {
-        S.alphaMask = null;
-        flatImg     = raw;
-      }
+    let flatImg;
+    if (hasAlpha) {
+      S.alphaMask = new Uint8Array(raw.data.length / 4);
+      for (let i = 0; i < S.alphaMask.length; i++) S.alphaMask[i] = raw.data[i * 4 + 3];
+      const flat  = document.createElement('canvas');
+      flat.width  = c.width;
+      flat.height = c.height;
+      const fctx  = flat.getContext('2d');
+      fctx.fillStyle = '#ffffff';
+      fctx.fillRect(0, 0, flat.width, flat.height);
+      fctx.drawImage(c, 0, 0);
+      flatImg = fctx.getImageData(0, 0, flat.width, flat.height);
+    } else {
+      S.alphaMask = null;
+      flatImg     = raw;
+    }
 
-      S.inputImg        = flatImg;
-      S.processedImg    = null;
-      S.processedFor    = null;
-      S.processedFilter = null;
-      S.imageState      = 'orig';
-      S.lastElapsed     = null;
-      resetStrength();
-      setStrengthEnabled(false);
-      $('btn-process').classList.remove('done');
-      $('btn-dl').disabled                = true;
-      renderViewer(S.inputImg, null);
-      $('canvas-area').classList.add('viewer-active');
-      $('iinfo-dim').textContent          = t('px-dims', c.width, c.height);
-      $('iinfo-disp').textContent         = '—';
-      $('img-info-section').style.display = 'block';
-      updateStateGrid();
-      $('btn-clear').disabled      = false;
-      $('proc-status').textContent = '';
-      $('proc-status').className   = 'inline-status';
-      updateProcessBtn();
-    };
-    img.src = e.target.result;
-  };
-  reader.readAsDataURL(file);
+    S.inputImg        = flatImg;
+    S.processedImg    = null;
+    S.processedFor    = null;
+    S.processedFilter = null;
+    S.imageState      = 'orig';
+    S.lastElapsed     = null;
+    resetStrength();
+    setStrengthEnabled(false);
+    $('btn-process').classList.remove('done');
+    $('btn-dl').disabled                = true;
+    renderViewer(S.inputImg, null);
+    $('canvas-area').classList.add('viewer-active');
+    $('iinfo-dim').textContent          = t('px-dims', c.width, c.height);
+    $('iinfo-disp').textContent         = '—';
+    $('img-info-section').style.display = 'block';
+    updateStateGrid();
+    $('btn-clear').disabled      = false;
+    $('proc-status').textContent = '';
+    $('proc-status').className   = 'inline-status';
+    updateProcessBtn();
+  } catch { /* silently ignore invalid files */ }
 }
 
 function updateStateGrid() {
@@ -502,20 +499,19 @@ function updateProcessBtn() {
 
 // ── Viewer ────────────────────────────────────────────────────
 function renderViewer(before, after) {
-  const cvB = $('cv-before'), cvA = $('cv-after');
-  cvB.width  = before.width;  cvB.height = before.height;
-  cvB.getContext('2d').putImageData(before, 0, 0);
-  const src  = after || before;
-  cvA.width  = src.width;     cvA.height = src.height;
-  cvA.getContext('2d').putImageData(src, 0, 0);
+  cvBefore.width  = before.width;  cvBefore.height = before.height;
+  cvBefore.getContext('2d').putImageData(before, 0, 0);
+  const src = after || before;
+  cvAfter.width   = src.width;     cvAfter.height  = src.height;
+  cvAfter.getContext('2d').putImageData(src, 0, 0);
   $('drop-idle').style.display = 'none';
-  $('viewer').style.display    = 'block';
+  viewer.style.display         = 'block';
   requestAnimationFrame(() => { setSlider(S.sliderPct); updateDisplaySize(); });
 }
 
 function updateDisplaySize() {
   if (!S.inputImg) return;
-  const r = $('cv-before').getBoundingClientRect();
+  const r = cvBefore.getBoundingClientRect();
   $('iinfo-disp').textContent = t('px-dims', Math.round(r.width), Math.round(r.height));
 }
 
@@ -526,25 +522,23 @@ function applyBlend() {
 
 function setSlider(pct) {
   S.sliderPct = pct;
-  const cvA        = $('cv-after');
-  const viewerEl   = $('viewer');
-  const viewerRect = viewerEl.getBoundingClientRect();
-  const canvasRect = cvA.getBoundingClientRect();
+  const viewerRect = viewer.getBoundingClientRect();
+  const canvasRect = cvAfter.getBoundingClientRect();
+  const cvBRect    = cvBefore.getBoundingClientRect();
   const sliderPx   = pct / 100 * viewerRect.width;
   const clipLeft   = Math.max(0, sliderPx - (canvasRect.left - viewerRect.left));
-  cvA.style.clipPath       = `inset(0 0 0 ${canvasRect.width > 0 ? clipLeft / canvasRect.width * 100 : pct}%)`;
-  $('vdivider').style.left = pct + '%';
-
-  const viewerTop = viewerRect.top;
-  const cvBRect   = $('cv-before').getBoundingClientRect();
-  const topPx     = Math.round(cvBRect.top - viewerTop);
-  const heightPx  = Math.round(cvBRect.height);
-  viewerEl.style.setProperty('--img-top-px',    topPx              + 'px');
-  viewerEl.style.setProperty('--img-bottom-px', (topPx + heightPx) + 'px');
+  cvAfter.style.clipPath = `inset(0 0 0 ${canvasRect.width > 0 ? clipLeft / canvasRect.width * 100 : pct}%)`;
+  vdivider.style.left    = pct + '%';
+  const topPx    = Math.round(cvBRect.top - viewerRect.top);
+  const heightPx = Math.round(cvBRect.height);
+  viewer.style.setProperty('--img-top-px',    topPx              + 'px');
+  viewer.style.setProperty('--img-bottom-px', (topPx + heightPx) + 'px');
 }
 
-const viewer  = $('viewer');
+const viewer   = $('viewer');
 const vdivider = $('vdivider');
+const cvBefore = $('cv-before');
+const cvAfter  = $('cv-after');
 
 vdivider.addEventListener('pointerdown', e => {
   e.preventDefault();
@@ -573,17 +567,12 @@ window.addEventListener('resize', () => {
 
 // ── Strength slider ───────────────────────────────────────────
 $('strength').addEventListener('input', function () {
-  const snapped = Math.round(parseInt(this.value) / 10) * 10;
-  this.value                   = snapped;
-  S.strength                   = snapped;
-  $('slider-fill').style.width = snapped + '%';
-  $('str-num').textContent     = snapped + '%';
+  const v = +this.value;
+  S.strength                   = v;
+  $('slider-fill').style.width = v + '%';
+  $('str-num').textContent     = v + '%';
   if (S.processedImg && S.processedFor === S.inputImg && S.processedFilter === S.filterChoice) {
-    const b   = blendImgs(S.inputImg, S.processedImg, snapped / 100);
-    const cvA = $('cv-after');
-    cvA.width  = b.width;
-    cvA.height = b.height;
-    cvA.getContext('2d').putImageData(b, 0, 0);
+    cvAfter.getContext('2d').putImageData(blendImgs(S.inputImg, S.processedImg, v / 100), 0, 0);
   }
 });
 
@@ -640,10 +629,12 @@ function cancelProcessing() {
 // ── Blend + download ──────────────────────────────────────────
 function blendImgs(orig, proc, s) {
   const o = new ImageData(orig.width, orig.height);
-  for (let i = 0; i < orig.data.length; i++) {
-    o.data[i] = (i & 3) === 3
-      ? orig.data[i]
-      : (orig.data[i] * (1 - s) + proc.data[i] * s + 0.5) | 0;
+  const inv = 1 - s;
+  for (let i = 0; i < orig.data.length; i += 4) {
+    o.data[i]   = (orig.data[i]   * inv + proc.data[i]   * s + 0.5) | 0;
+    o.data[i+1] = (orig.data[i+1] * inv + proc.data[i+1] * s + 0.5) | 0;
+    o.data[i+2] = (orig.data[i+2] * inv + proc.data[i+2] * s + 0.5) | 0;
+    o.data[i+3] = orig.data[i+3];
   }
   if (S.alphaMask) {
     for (let i = 0; i < S.alphaMask.length; i++) o.data[i * 4 + 3] = S.alphaMask[i];

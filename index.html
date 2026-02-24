@@ -33,7 +33,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@300;400;500;600&display=swap">
-<link rel="stylesheet" href="style.css?v=8">
+<link rel="stylesheet" href="style.css?v=8" fetchpriority="high">
 </head>
 <body>
 
@@ -242,59 +242,58 @@
 
 <script>
 (function () {
-  function init() {
-    var ca      = document.getElementById('canvas-area');
-    var vd      = document.getElementById('vdivider');
-    var tlTag   = document.getElementById('img-info-section');
-    var trTag   = document.getElementById('canvas-tag-tr');
-    var blTag   = document.getElementById('canvas-tag-bl');
-    var srcRVal = document.getElementById('side-right-val');
-    var dstRVal = document.getElementById('canvas-side-right-val');
-    var srcGrid = document.getElementById('img-state-grid');
+  const init = () => {
+    const ca      = document.getElementById('canvas-area');
+    const vd      = document.getElementById('vdivider');
+    const tlTag   = document.getElementById('img-info-section');
+    const trTag   = document.getElementById('canvas-tag-tr');
+    const blTag   = document.getElementById('canvas-tag-bl');
+    const srcRVal = document.getElementById('side-right-val');
+    const dstRVal = document.getElementById('canvas-side-right-val');
+    const srcGrid = document.getElementById('img-state-grid');
 
     if (!ca || !vd) return;
 
-    function syncDivider() {
-      var caRect = ca.getBoundingClientRect();
+    const syncDivider = () => {
+      const caRect = ca.getBoundingClientRect();
       if (caRect.width === 0) return;
-      var vdRect = vd.getBoundingClientRect();
-      var x = vdRect.left + vdRect.width * 0.5 - caRect.left;
+      const vdRect = vd.getBoundingClientRect();
+      const x = vdRect.left + vdRect.width * 0.5 - caRect.left;
       ca.style.setProperty('--divider-x', x + 'px');
 
       if (tlTag && tlTag.style.display !== 'none') {
-        var tlRect  = tlTag.getBoundingClientRect();
-        var tlLeft  = tlRect.left  - caRect.left;
-        var tlRight = tlRect.right - caRect.left;
-        var rClip   = Math.max(0, tlRight - x);
+        const tlRect  = tlTag.getBoundingClientRect();
+        const tlRight = tlRect.right - caRect.left;
+        const rClip   = Math.max(0, tlRight - x);
         tlTag.style.clipPath = 'inset(-4px ' + rClip + 'px -4px 0)';
       }
       if (trTag && trTag.style.display !== 'none') {
-        var trLeft = trTag.getBoundingClientRect().left - caRect.left;
-        var lClip  = Math.max(0, x - trLeft);
+        const trLeft = trTag.getBoundingClientRect().left - caRect.left;
+        const lClip  = Math.max(0, x - trLeft);
         trTag.style.clipPath = 'inset(-4px 0 -4px ' + lClip + 'px)';
       }
-    }
+    };
 
-    function syncRightContent() {
+    const syncRightContent = () => {
       if (srcRVal && dstRVal) dstRVal.textContent = srcRVal.textContent;
-    }
+    };
 
-    function syncTR() {
+    const syncTR = () => {
       if (!srcGrid || !trTag) return;
-      var vis = srcGrid.style.display !== 'none' && srcGrid.style.display !== '';
+      const vis = srcGrid.style.display !== 'none' && srcGrid.style.display !== '';
       trTag.style.display = vis ? 'flex' : 'none';
       if (vis) syncDivider();
-    }
+    };
 
-    function syncBL() {
+    const syncBL = () => {
       if (!tlTag || !blTag) return;
-      var vis = tlTag.style.display !== 'none' && tlTag.style.display !== '';
+      const vis = tlTag.style.display !== 'none' && tlTag.style.display !== '';
       blTag.style.display = vis ? 'grid' : 'none';
-    }
+    };
 
     new MutationObserver(syncDivider)
       .observe(vd, { attributes: true, attributeFilter: ['style'] });
-    new MutationObserver(function () {
+    new MutationObserver(() => {
       syncBL();
       if (tlTag.style.display === 'none' || tlTag.style.display === '') {
         tlTag.style.clipPath = '';
@@ -302,7 +301,7 @@
       syncDivider();
     }).observe(tlTag, { attributes: true, attributeFilter: ['style'] });
 
-    new MutationObserver(function () {
+    new MutationObserver(() => {
       syncRightContent();
       if (srcGrid.style.display === 'none' || srcGrid.style.display === '') {
         if (trTag) trTag.style.clipPath = '';
@@ -313,7 +312,7 @@
 
     window.addEventListener('resize', syncDivider);
     syncDivider(); syncTR(); syncBL(); syncRightContent();
-  }
+  };
 
   if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', init);

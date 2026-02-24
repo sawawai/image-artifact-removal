@@ -76,7 +76,7 @@ async function loadModel(modelUrl) {
   {
     const inName  = session.inputNames[0];
     const outName = session.outputNames[0];
-    const probe   = new ort.Tensor(DTYPE, new (F16OK ? Float16Array : Float32Array)(3 * TILE * TILE), [1, 3, TILE, TILE]);
+    const probe   = new ort.Tensor(DTYPE, tileBuf, [1, 3, TILE, TILE]);
     const res     = await session.run({ [inName]: probe });
     const dims    = res[outName].dims;
     isNHWC = (dims[3] === 3);
@@ -91,7 +91,7 @@ async function loadModel(modelUrl) {
 // Valid pixels come from the tw×th region at (tx,ty); rest is zero-padded.
 // Writing directly to Float16Array avoids a separate f32→f16 conversion pass.
 function fillTile(data, W, tx, ty, tw, th) {
-  tileBuf.fill(0);
+  if (tw < TILE || th < TILE) tileBuf.fill(0);
   const area = TILE * TILE;
   for (let py = 0; py < th; py++) {
     const srcRow = ((ty + py) * W + tx) * 4;
@@ -103,6 +103,16 @@ function fillTile(data, W, tx, ty, tw, th) {
       tileBuf[2*area + dstRow + px] = data[s + 2] / 255;
     }
   }
+}
+
+const W_CACHE = new Map();
+function getWindowWeights(n) {
+  if (!W_CACHE.has(n)) {
+    const w = new Float32Array(n);
+    for (let p = 0; p < n; p++) w[p] = Math.sin(Math.PI * (p + 0.5) / n);
+    W_CACHE.set(n, w);
+  }
+  return W_CACHE.get(n);
 }
 
 async function runTiled(imgBuf, W, H) {
@@ -144,10 +154,8 @@ async function runTiled(imgBuf, W, H) {
     const otx     = tx * scale;
     const oty     = ty * scale;
 
-    const wx = new Float32Array(validOW);
-    const wy = new Float32Array(validOH);
-    for (let p = 0; p < validOW; p++) wx[p] = Math.sin(Math.PI * (p + 0.5) / validOW);
-    for (let p = 0; p < validOH; p++) wy[p] = Math.sin(Math.PI * (p + 0.5) / validOH);
+    const wx = getWindowWeights(validOW);
+    const wy = getWindowWeights(validOH);
 
     blendTile(od, validOW, validOH, otx, oty, outW, outH, wx, wy, outR, outG, outB, outWt);
 

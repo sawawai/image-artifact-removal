@@ -1,6 +1,6 @@
 # Image Artifact Removal
 
-Browser-based compression artifact and noise removal for images. Processing runs entirely in the browser, noo images are uploaded or transmitted.
+Browser-based compression artifact and noise removal for images. Processing runs entirely in the browser, no images are uploaded or transmitted.
 
 [Live site](https://sawawai.github.io/image-artifact-removal)
 

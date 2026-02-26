@@ -277,18 +277,18 @@ a:hover { text-decoration: underline; }
   will-change: clip-path;
 }
 
-/* 80px grab zone centered on the divider line — wide enough to comfortably
-   reach the before/after label edges. The visible 2px line is rendered via
-   ::after so the hit area is much wider than the visual. */
+/* 30px grab zone centered on the divider line — 3px less on each side for the ew-resize
+   cursor (28px) plus the 4px vertical line. The visible 2px line is rendered via
+   ::after so the hit area is wider than the visual. */
 .viewer-divider {
   position: absolute;
   top: 0; height: 100%;
-  width: 80px;
+  width: 30px;
   left: 50%;
   transform: translateX(-50%);
   pointer-events: auto;
-  cursor: col-resize;
-  z-index: 2;
+  cursor: ew-resize;
+  z-index: 4;
 }
 .viewer-divider::after {
   content: '';
@@ -300,6 +300,12 @@ a:hover { text-decoration: underline; }
   background: rgba(255,255,255,0.80);
   box-shadow: 3px 0 10px rgba(0,0,0,0.40);
   pointer-events: none;
+  transition: width 0.15s, background 0.15s;
+}
+.viewer-divider:hover::after {
+  width: 4px;
+  background: rgba(255,255,255,1);
+  box-shadow: 3px 0 10px rgba(0,0,0,0.40);
 }
 .viewer-handle {
   position: absolute;
@@ -307,10 +313,16 @@ a:hover { text-decoration: underline; }
   transform: translate(-50%, -50%);
   width: 2rem; height: 2rem;
   border-radius: 50%;
-  background: var(--white);
+  background: rgba(255,255,255,1);
   box-shadow: 0 1px 6px rgba(0,0,0,0.20);
   display: flex; align-items: center; justify-content: center;
   pointer-events: none;
+  z-index: 5;
+  transition: width 0.15s, height 0.15s, background 0.15s;
+}
+.viewer-divider:hover .viewer-handle {
+  width: 2.25rem;
+  height: 2.25rem;
 }
 .viewer-handle svg { color: var(--cream-muted); width: 0.88rem; height: 0.88rem; }
 
@@ -326,6 +338,7 @@ a:hover { text-decoration: underline; }
   pointer-events: none;
   white-space: nowrap;
   z-index: 3;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.25);
 }
 .vtag-before {
   left: var(--divider-x);

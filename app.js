@@ -203,12 +203,11 @@ const S = {
   procStatusState:   null,
   inputImg:         null,
   alphaMask:        null,
-  processedImg:     null,
+  processedImgs:    { a: null, b: null },
   processedFor:     null,
-  processedFilter:  null,
   strength:         80,
   imageState:       'none',
-  lastElapsed:      null,
+  lastElapsed:      { a: null, b: null },
   sliderPct:        50,
   dragging:         false,
   viewMode:         'fit',
@@ -250,7 +249,7 @@ function updateProcStatus() {
   const ps = S.procStatusState;
   if (!ps) { el.textContent = ''; el.className = 'inline-status'; return; }
   if (ps.key === 'proc-ok') {
-    const fresh = S.processedImg && S.processedFor === S.inputImg && S.processedFilter === S.filterChoice;
+    const fresh = S.processedImgs[S.filterChoice] && S.processedFor === S.inputImg;
     if (!fresh) { el.textContent = ''; el.className = 'inline-status'; return; }
   }
   const txt = (ps.arg !== undefined ? t(ps.key, ps.arg) : t(ps.key)) + (ps.suffix || '');
@@ -327,19 +326,18 @@ function handleWorkerMsg({ data: msg }) {
         ctx2.imageSmoothingEnabled = true;
         ctx2.imageSmoothingQuality = 'high';
         ctx2.drawImage(bigC, 0, 0, W, H);
-        S.processedImg = ctx2.getImageData(0, 0, W, H);
+        S.processedImgs[S.filterChoice] = ctx2.getImageData(0, 0, W, H);
       } else {
-        S.processedImg = new ImageData(new Uint8ClampedArray(msg.resultBuf), W, H);
+        S.processedImgs[S.filterChoice] = new ImageData(new Uint8ClampedArray(msg.resultBuf), W, H);
       }
-      S.processedFor    = S.inputImg;
-      S.processedFilter = S.filterChoice;
+      S.processedFor = S.inputImg;
       S.imageState      = 'done';
-      S.lastElapsed     = ((performance.now() - S.t0) / 1000).toFixed(1);
+      S.lastElapsed[S.filterChoice] = ((performance.now() - S.t0) / 1000).toFixed(1);
       applyBlend();
       updateStateGrid();
       setStrengthEnabled(true);
       $('btn-dl').disabled         = false;
-      setProcStatus('proc-ok', S.lastElapsed, 'ok');
+      setProcStatus('proc-ok', S.lastElapsed[S.filterChoice], 'ok');
       showToast(t('toast-ok'));
       endProcessing(false);
       break;
@@ -388,7 +386,21 @@ function selectFilter(choice) {
     S.filterReady = false;
     setFilterStatus(null);
   }
-  updateProcStatus();
+  const hasCached = S.inputImg && S.processedImgs[choice] && S.processedFor === S.inputImg;
+  if (hasCached) {
+    S.imageState = 'done';
+    setStrengthEnabled(true);
+    $('btn-dl').disabled = false;
+    applyBlend();
+    setProcStatus('proc-ok', S.lastElapsed[choice], 'ok');
+  } else if (S.inputImg) {
+    S.imageState = 'orig';
+    setStrengthEnabled(false);
+    $('btn-dl').disabled = true;
+    renderViewer(S.inputImg, null);
+    setProcStatus(null);
+  }
+  updateStateGrid();
   updateProcessBtn();
 }
 
@@ -429,9 +441,10 @@ async function loadFile(file) {
     const c   = document.createElement('canvas');
     c.width   = bmp.width;
     c.height  = bmp.height;
-    c.getContext('2d').drawImage(bmp, 0, 0);
+    const ctx = c.getContext('2d');
+    ctx.drawImage(bmp, 0, 0);
     bmp.close();
-    const raw = c.getContext('2d').getImageData(0, 0, c.width, c.height);
+    const raw = ctx.getImageData(0, 0, c.width, c.height);
 
     let hasAlpha = false;
     for (let i = 3; i < raw.data.length; i += 4) if (raw.data[i] < 255) { hasAlpha = true; break; }
@@ -453,12 +466,11 @@ async function loadFile(file) {
       flatImg     = raw;
     }
 
-    S.inputImg        = flatImg;
-    S.processedImg    = null;
-    S.processedFor    = null;
-    S.processedFilter = null;
+    S.inputImg      = flatImg;
+    S.processedImgs = { a: null, b: null };
+    S.processedFor  = null;
     S.imageState      = 'orig';
-    S.lastElapsed     = null;
+    S.lastElapsed     = { a: null, b: null };
     resetStrength();
     setStrengthEnabled(false);
     $('btn-process').classList.remove('done');
@@ -496,19 +508,18 @@ function updateStateGrid() {
   grid.style.display              = 'grid';
   $('side-left-val').textContent  = t('side-orig');
   $('side-right-val').textContent = S.imageState === 'done'
-    ? t('side-done', S.processedFilter || S.filterChoice)
+    ? t('side-done', S.filterChoice)
     : t('side-orig');
 }
 
 function clearImage() {
   if (!S.inputImg) return;
-  S.inputImg         = null;
-  S.alphaMask        = null;
-  S.processedImg     = null;
-  S.processedFor     = null;
-  S.processedFilter  = null;
+  S.inputImg      = null;
+  S.alphaMask     = null;
+  S.processedImgs = { a: null, b: null };
+  S.processedFor  = null;
   S.imageState       = 'none';
-  S.lastElapsed      = null;
+  S.lastElapsed      = { a: null, b: null };
   S.processAfterLoad = false;
   if (S.viewMode === 'pixel') {
     S.viewMode = 'fit';
@@ -536,9 +547,8 @@ function clearImage() {
 }
 
 function updateProcessBtn() {
-  const hasFreshResult = S.processedImg
-    && S.processedFor    === S.inputImg
-    && S.processedFilter === S.filterChoice;
+  const hasFreshResult = S.processedImgs[S.filterChoice]
+    && S.processedFor === S.inputImg;
   const btn = $('btn-process');
   btn.style.transition = 'none';
   if (hasFreshResult && !S.processing) {
@@ -584,8 +594,14 @@ function updateDisplaySize() {
 }
 
 function applyBlend() {
-  if (!S.inputImg || !S.processedImg) return;
-  renderViewer(S.inputImg, blendImgs(S.inputImg, S.processedImg, S.strength / 100));
+  const proc = S.processedImgs[S.filterChoice];
+  if (!S.inputImg || !proc) return;
+  // cvBefore already holds S.inputImg (painted by renderViewer on load / filter-switch).
+  // Only cvAfter needs updating — avoids a redundant full putImageData on the before canvas.
+  cvAfter.getContext('2d').putImageData(blendImgs(S.inputImg, proc, S.strength / 100), 0, 0);
+  requestAnimationFrame(() => {
+    if (S.viewMode === 'pixel') updatePixelModeClip(); else setSlider(S.sliderPct);
+  });
 }
 
 function setSlider(pct) {
@@ -623,9 +639,8 @@ vdivider.addEventListener('pointerup',     () => S.dragging = false);
 vdivider.addEventListener('pointercancel', () => S.dragging = false);
 
 function doSlide(e) {
-  const r  = viewer.getBoundingClientRect();
-  const cx = e.touches ? e.touches[0].clientX : e.clientX;
-  setSlider(Math.max(0, Math.min(100, (cx - r.left) / r.width * 100)));
+  const r = viewer.getBoundingClientRect();
+  setSlider(Math.max(0, Math.min(100, (e.clientX - r.left) / r.width * 100)));
 }
 
 // ── Pixel mode / pan ─────────────────────────────────────────
@@ -692,18 +707,14 @@ viewer.addEventListener('pointermove', e => {
   const tx = `translate(calc(-50% + ${S.panX}px), calc(-50% + ${S.panY}px))`;
   cvBefore.style.transform = tx;
   cvAfter.style.transform  = tx;
-  const w = cvAfter.width;
-  if (w) {
-    const clipPct = Math.max(0, Math.min(100, 50 - (S.panX / w) * 100));
-    cvAfter.style.clipPath = `inset(0 0 0 ${clipPct}%)`;
-  }
+  updatePixelModeClip();
 });
 const endPan = () => { S.panning = false; viewer.classList.remove('panning-active'); };
 viewer.addEventListener('pointerup',     endPan);
 viewer.addEventListener('pointercancel', endPan);
 
 window.addEventListener('resize', () => {
-  if (S.inputImg && $('viewer').style.display !== 'none') {
+  if (S.inputImg && viewer.style.display !== 'none') {
     requestAnimationFrame(() => {
       if (S.viewMode === 'pixel') updatePixelModeClip(); else setSlider(S.sliderPct);
       updateDisplaySize();
@@ -712,13 +723,14 @@ window.addEventListener('resize', () => {
 });
 
 // ── Strength slider ───────────────────────────────────────────
-$('strength').addEventListener('input', function () {
-  const v = +this.value;
+$('strength').addEventListener('input', e => {
+  const v = +e.target.value;
   S.strength                   = v;
   $('slider-fill').style.width = v + '%';
   $('str-num').textContent     = v + '%';
-  if (S.processedImg && S.processedFor === S.inputImg && S.processedFilter === S.filterChoice) {
-    cvAfter.getContext('2d').putImageData(blendImgs(S.inputImg, S.processedImg, v / 100), 0, 0);
+  const proc = S.processedImgs[S.filterChoice];
+  if (proc && S.processedFor === S.inputImg) {
+    cvAfter.getContext('2d').putImageData(blendImgs(S.inputImg, proc, v / 100), 0, 0);
   }
 });
 
@@ -735,7 +747,7 @@ function processImage() {
   }
 
   // Fresh result already exists for this image + filter — just re-apply blend
-  if (S.processedImg && S.processedFor === S.inputImg && S.processedFilter === S.filterChoice) {
+  if (S.processedImgs[S.filterChoice] && S.processedFor === S.inputImg) {
     applyBlend();
     $('btn-dl').disabled = false;
     return;
@@ -774,37 +786,53 @@ function cancelProcessing() {
 
 // ── Blend + download ──────────────────────────────────────────
 function blendImgs(orig, proc, s) {
-  const o = new ImageData(orig.width, orig.height);
+  const o   = new ImageData(orig.width, orig.height);
   const inv = 1 - s;
-  for (let i = 0; i < orig.data.length; i += 4) {
-    o.data[i]   = (orig.data[i]   * inv + proc.data[i]   * s + 0.5) | 0;
-    o.data[i+1] = (orig.data[i+1] * inv + proc.data[i+1] * s + 0.5) | 0;
-    o.data[i+2] = (orig.data[i+2] * inv + proc.data[i+2] * s + 0.5) | 0;
-    o.data[i+3] = orig.data[i+3];
-  }
-  if (S.alphaMask) {
-    for (let i = 0; i < S.alphaMask.length; i++) o.data[i * 4 + 3] = S.alphaMask[i];
+  const mask = S.alphaMask;
+  // Two specialised loops avoid a per-pixel branch and eliminate the second
+  // alpha-restore pass that existed when alphaMask was applied separately.
+  if (mask) {
+    for (let i = 0, j = 0; i < orig.data.length; i += 4, j++) {
+      o.data[i]   = (orig.data[i]   * inv + proc.data[i]   * s + 0.5) | 0;
+      o.data[i+1] = (orig.data[i+1] * inv + proc.data[i+1] * s + 0.5) | 0;
+      o.data[i+2] = (orig.data[i+2] * inv + proc.data[i+2] * s + 0.5) | 0;
+      o.data[i+3] = mask[j];
+    }
+  } else {
+    for (let i = 0; i < orig.data.length; i += 4) {
+      o.data[i]   = (orig.data[i]   * inv + proc.data[i]   * s + 0.5) | 0;
+      o.data[i+1] = (orig.data[i+1] * inv + proc.data[i+1] * s + 0.5) | 0;
+      o.data[i+2] = (orig.data[i+2] * inv + proc.data[i+2] * s + 0.5) | 0;
+      o.data[i+3] = orig.data[i+3];
+    }
   }
   return o;
 }
 
 function downloadResult() {
-  if (!S.processedImg) return;
-  const b = blendImgs(S.inputImg, S.processedImg, S.strength / 100);
+  const proc = S.processedImgs[S.filterChoice];
+  if (!proc) return;
+  const b = blendImgs(S.inputImg, proc, S.strength / 100);
   const c = document.createElement('canvas');
   c.width  = b.width;
   c.height = b.height;
   c.getContext('2d').putImageData(b, 0, 0);
-  const filterName = S.processedFilter === 'a'
+  const filterName = S.filterChoice === 'a'
     ? (lang === 'ja' ? 'シャープ' : 'sharp')
     : (lang === 'ja' ? 'ソフト'   : 'soft');
   const sfx = lang === 'ja'
     ? `_除去_${filterName}_${S.strength}`
     : `_denoised_${filterName}_${S.strength}`;
-  const a    = document.createElement('a');
-  a.download = S.inputFilename + sfx + '.png';
-  a.href     = c.toDataURL('image/png');
-  a.click();
+  const filename = S.inputFilename + sfx + '.png';
+  // toBlob is async — avoids blocking the main thread with a synchronous PNG encode.
+  c.toBlob(blob => {
+    const url = URL.createObjectURL(blob);
+    const a   = document.createElement('a');
+    a.download = filename;
+    a.href     = url;
+    a.click();
+    URL.revokeObjectURL(url);
+  }, 'image/png');
   showToast(t('toast-dl'));
 }
 

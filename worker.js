@@ -64,10 +64,27 @@ async function loadModel(modelUrl) {
     postMessage({ type: 'log', msg: 'navigator.gpu not available' });
   }
 
-  session = await ort.InferenceSession.create(buf.buffer.slice(0), {
+  // Pass buf.buffer directly — ORT reads but does not detach it, so no copy needed.
+  // enableGraphCapture records GPU command buffers on the first session.run() and
+  // replays them for every subsequent call — a significant throughput gain for
+  // WebGPU, especially on Firefox/wgpu which has high per-dispatch CPU overhead.
+  // Requires fixed input/output shapes, which our 512×512-padded tiles satisfy.
+  const sessionOpts = {
     executionProviders: providers,
     graphOptimizationLevel: 'all',
-  });
+  };
+  if (providers[0] === 'webgpu') sessionOpts.enableGraphCapture = true;
+  try {
+    session = await ort.InferenceSession.create(buf.buffer, sessionOpts);
+  } catch (e) {
+    if (sessionOpts.enableGraphCapture) {
+      postMessage({ type: 'log', msg: 'Graph capture unavailable, retrying: ' + e.message });
+      delete sessionOpts.enableGraphCapture;
+      session = await ort.InferenceSession.create(buf.buffer, sessionOpts);
+    } else {
+      throw e;
+    }
+  }
 
   // ── Detect output layout (NCHW vs NHWC) with a warm-up run ───
   // Firefox's wgpu backend returns NHWC [1,H,W,3] instead of NCHW [1,3,H,W].
@@ -78,9 +95,11 @@ async function loadModel(modelUrl) {
     const outName = session.outputNames[0];
     const probe   = new ort.Tensor(DTYPE, tileBuf, [1, 3, TILE, TILE]);
     const res     = await session.run({ [inName]: probe });
-    const dims    = res[outName].dims;
+    const warmOut = res[outName];
+    const dims    = warmOut.dims;
     isNHWC = (dims[3] === 3);
     postMessage({ type: 'log', msg: 'output dims: ' + dims.join(',') + ' isNHWC=' + isNHWC });
+    if (warmOut.dispose) warmOut.dispose();
   }
 
   const backend = (providers[0] === 'webgpu') ? 'WebGPU' : 'WASM (CPU)';
@@ -121,8 +140,10 @@ async function runTiled(imgBuf, W, H) {
   const tiles = [];
   for (let y = 0; y < H; y += step) {
     for (let x = 0; x < W; x += step) {
-      const x2 = Math.min(x + TILE, W), y2 = Math.min(y + TILE, H);
-      const tx = Math.max(0, x2 - TILE), ty = Math.max(0, y2 - TILE);
+      const x2 = Math.min(x + TILE, W);
+      const y2 = Math.min(y + TILE, H);
+      const tx = Math.max(0, x2 - TILE);
+      const ty = Math.max(0, y2 - TILE);
       tiles.push({ tx, ty, tw: x2 - tx, th: y2 - ty });
     }
   }
@@ -145,9 +166,10 @@ async function runTiled(imgBuf, W, H) {
     const { tx, ty, tw, th } = tiles[i];
     fillTile(data, W, tx, ty, tw, th);
 
-    const inp = new ort.Tensor(DTYPE, tileBuf, [1, 3, TILE, TILE]);
-    const res = await session.run({ [inName]: inp });
-    const od  = res[outName].data;
+    const inp    = new ort.Tensor(DTYPE, tileBuf, [1, 3, TILE, TILE]);
+    const res    = await session.run({ [inName]: inp });
+    const tileOut = res[outName];
+    const od      = tileOut.data;
 
     const validOW = tw * scale;
     const validOH = th * scale;
@@ -158,6 +180,7 @@ async function runTiled(imgBuf, W, H) {
     const wy = getWindowWeights(validOH);
 
     blendTile(od, validOW, validOH, otx, oty, outW, outH, wx, wy, outR, outG, outB, outWt);
+    if (tileOut.dispose) tileOut.dispose();
 
     postMessage({ type: 'proc-progress', pct: (i + 1) / tiles.length * 100 });
   }
@@ -178,11 +201,13 @@ async function runTiled(imgBuf, W, H) {
 function blendNHWC(od, validOW, validOH, otx, oty, outW, outH, wx, wy, outR, outG, outB, outWt) {
   const oW = TILE * modelScale;
   for (let py = 0; py < validOH; py++) {
-    const oy = oty + py; if (oy >= outH) continue;
+    const oy = oty + py;
+    if (oy >= outH) continue;
     const db  = oy * outW;
     const wyp = wy[py];
     for (let px = 0; px < validOW; px++) {
-      const ox = otx + px; if (ox >= outW) continue;
+      const ox = otx + px;
+      if (ox >= outW) continue;
       const w    = wx[px] * wyp;
       const di   = db + ox;
       const base = (py * oW + px) * 3;
@@ -198,11 +223,13 @@ function blendNCHW(od, validOW, validOH, otx, oty, outW, outH, wx, wy, outR, out
   const oW = TILE * modelScale;
   const oa = oW * oW;
   for (let py = 0; py < validOH; py++) {
-    const oy = oty + py; if (oy >= outH) continue;
+    const oy = oty + py;
+    if (oy >= outH) continue;
     const db  = oy * outW;
     const wyp = wy[py];
     for (let px = 0; px < validOW; px++) {
-      const ox = otx + px; if (ox >= outW) continue;
+      const ox = otx + px;
+      if (ox >= outW) continue;
       const w  = wx[px] * wyp;
       const di = db + ox;
       const ri = py * oW + px;

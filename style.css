@@ -148,8 +148,6 @@ a:hover { text-decoration: underline; }
   align-items: center;
   gap: 5px;
 }
-.canvas-tag-tr .ctag-row { flex-direction: row; }
-
 .ctag-label {
   font-size: clamp(13px, 1.05vw, 15px);
   font-weight: 400;
@@ -179,7 +177,6 @@ a:hover { text-decoration: underline; }
   white-space: nowrap;
 }
 .ctag-dim {
-  font-family: var(--font-ui);
   font-size: clamp(13px, 1.05vw, 15px);
   font-weight: 400;
   color: var(--cream-muted);
@@ -230,7 +227,6 @@ a:hover { text-decoration: underline; }
 .drop-idle.drag-over .drop-circle svg { color: var(--accent); }
 
 .drop-label {
-  font-family: var(--font-ui);
   font-size: clamp(14px, 1.0vw, 16px);
   color: var(--text-light);
 }
@@ -305,7 +301,6 @@ a:hover { text-decoration: underline; }
 .viewer-divider:hover::after {
   width: 4px;
   background: rgba(255,255,255,1);
-  box-shadow: 3px 0 10px rgba(0,0,0,0.40);
 }
 .viewer-handle {
   position: absolute;
@@ -331,7 +326,6 @@ a:hover { text-decoration: underline; }
    set precisely inside setSlider() where canvasRect is already measured. */
 .vtag-before, .vtag-after {
   position: absolute;
-  font-family: var(--font-ui);
   font-size: clamp(13px, 1.05vw, 15px);
   font-weight: 400;
   padding: 0.22em 0.60em;
@@ -385,7 +379,6 @@ a:hover { text-decoration: underline; }
   opacity: 0;
   transition: opacity 0.15s;
   display: flex; align-items: center; justify-content: center;
-  font-family: var(--font-ui);
   font-size: clamp(14px, 1.0vw, 16px);
   color: var(--accent);
 }
@@ -482,7 +475,6 @@ a:hover { text-decoration: underline; }
 
 .logo {
   flex: 1;
-  font-family: var(--font-ui);
   font-size: clamp(15px, 1.0vw, 17px);
   color: var(--text);
   display: flex;
@@ -630,8 +622,6 @@ a:hover { text-decoration: underline; }
   text-overflow: ellipsis;
 }
 .model-btn-name {
-  font-size: inherit;
-  font-weight: 500;
   line-height: 1.2;
 }
 
@@ -677,7 +667,6 @@ a:hover { text-decoration: underline; }
   opacity: 0.28;
   pointer-events: none;
 }
-.sb-group--muted input[type=range] { cursor: default; }
 
 /* Status area below process button — fixed height prevents layout shift */
 .status-area {

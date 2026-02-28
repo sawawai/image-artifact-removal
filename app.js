@@ -11,15 +11,15 @@ const TX = {
     'drop-sub':          'クリックしてファイルを選択 &nbsp;·&nbsp; <kbd>Ctrl+V</kbd> でペースト',
     'before':            '処理前',
     'after':             '処理後',
-    'sb-filter':         'フィルタを選択',
+    'sb-filter':         'フィルタ',
     'fchoice-a':         'シャープ',
     'fchoice-b':         'ソフト（低速）',
-    'sb-strength':       '除去の強さ',
+    'sb-strength':       'フィルタの強さ',
     'str-lo':            '元の画像（0%）',
     'str-hi':            '最大除去（100%）',
     'btn-process':       '画像ノイズを除去',
     'btn-cancel':        'キャンセル',
-    'btn-dl':            '結果を保存',
+    'btn-dl':            '画像を保存',
     'btn-clear':         '画像をクリア',
     'side-orig':         '元の画像',
     'side-done':         f => f === 'a' ? 'シャープ 適用済み' : 'ソフト 適用済み',
@@ -43,7 +43,7 @@ const TX = {
     'filter-loading':           'フィルタを読み込み中...',
     'filter-ready':             'フィルタ読み込み完了',
     'filter-err':               'フィルタの読み込みに失敗しました。',
-    'strength-hint':            'リアルタイムで反映されます。',
+    'strength-hint':            '変更はリアルタイムで反映されます。',
     'proc-pct':          p      => `処理中... ${p}%`,
     'proc-ok':           s      => `${s}秒で完了しました`,
     'toast-dl':          '保存しました',
@@ -55,6 +55,11 @@ const TX = {
     'mwarn-title':       'このツールはデスクトップ向けです',
     'mwarn-body':        'このツールはブラウザ内で直接画像を処理するため、デスクトップ向けに設計されています。モバイルデバイスでは非常に遅くなるか、動作しない場合があります。デスクトップまたはノートPCでのご利用を推奨します。',
     'mwarn-btn':         '続けて試す',
+    'view-mode-label':   '表示モード',
+    'view-mode-fit':     'フィット',
+    'view-mode-pixel':   '等倍',
+    'vmode-desc-fit':    '画像をキャンバスに合わせて表示\nスライダーで比較',
+    'vmode-desc-pixel':  '画像を実寸で表示\n画像をドラッグして移動',
   },
   en: {
     'logo':              'Artifact Removal',
@@ -63,15 +68,15 @@ const TX = {
     'drop-sub':          'Click to browse &nbsp;·&nbsp; paste with <kbd>Ctrl+V</kbd>',
     'before':            'Before',
     'after':             'After',
-    'sb-filter':         'Select filter',
+    'sb-filter':         'Filter',
     'fchoice-a':         'Sharp',
     'fchoice-b':         'Soft (slower)',
-    'sb-strength':       'Correction strength',
+    'sb-strength':       'Filter strength',
     'str-lo':            'Original image (0%)',
     'str-hi':            'Full correction (100%)',
     'btn-process':       'Remove image artifacts',
     'btn-cancel':        'Cancel',
-    'btn-dl':            'Save result',
+    'btn-dl':            'Save image',
     'btn-clear':         'Clear image',
     'side-orig':         'Original image',
     'side-done':         f => f === 'a' ? 'Sharp filter applied' : 'Soft filter applied',
@@ -87,7 +92,7 @@ const TX = {
     'credits-gpu-note-1':      'Uses WebGPU when available',
     'credits-gpu-note-2':      'Falls back to CPU otherwise',
     'gpu-status-ok':           'GPU available',
-    'gpu-status-no':           'GPU not available — processing will be much slower',
+    'gpu-status-no':           'GPU not available — processing will be slower',
     'bl-original':             'Input resolution',
     'bl-displayed':            'Rendered size',
     'px-dims':           (w, h) => `${w} × ${h} px`,
@@ -95,7 +100,7 @@ const TX = {
     'filter-loading':           'Loading filter...',
     'filter-ready':             'Filter ready',
     'filter-err':               'Failed to load filter.',
-    'strength-hint':            'Adjusts the result in real time.',
+    'strength-hint':            'Changes apply in real time.',
     'proc-pct':          p      => `Processing... ${p}%`,
     'proc-ok':           s      => `Completed in ${s}s`,
     'toast-dl':          'Saved',
@@ -107,6 +112,11 @@ const TX = {
     'mwarn-title':       'Designed for desktop use',
     'mwarn-body':        'This tool processes images directly in your browser and is designed for desktop use. On mobile devices it will be extremely slow or may not work at all. A desktop or laptop computer is strongly recommended.',
     'mwarn-btn':         'Try anyway',
+    'view-mode-label':   'View mode',
+    'view-mode-fit':     'Fit',
+    'view-mode-pixel':   '1:1',
+    'vmode-desc-fit':    'Image fit to canvas\nDrag slider to compare',
+    'vmode-desc-pixel':  'Image at actual size\nDrag image to pan',
   },
 };
 
@@ -150,6 +160,7 @@ const tMap = {
   't-mwarn-body':              'mwarn-body',
   't-mwarn-btn':               'mwarn-btn',
   't-strength-hint':           'strength-hint',
+  't-view-mode-label':         'view-mode-label',
 };
 
 function applyLang() {
@@ -168,6 +179,7 @@ function applyLang() {
   updateStateGrid();
   updateProcessBtn();
   updateGpuStatus();
+  updateViewModeDisplay();
 }
 
 function setLang(l) {
@@ -199,6 +211,14 @@ const S = {
   lastElapsed:      null,
   sliderPct:        50,
   dragging:         false,
+  viewMode:         'fit',
+  panX:             0,
+  panY:             0,
+  panning:          false,
+  panStartX:        0,
+  panStartY:        0,
+  panStartPanX:     0,
+  panStartPanY:     0,
   processing:       false,
   t0:               0,
 };
@@ -275,11 +295,21 @@ function handleWorkerMsg({ data: msg }) {
       }
       break;
 
-    case 'proc-progress':
-      $('proc-fill').className    = 'prog-fill';
-      $('proc-fill').style.width  = msg.pct + '%';
+    case 'proc-progress': {
+      const fill = $('proc-fill');
+      if (fill.classList.contains('spin')) {
+        // Switching from indeterminate spin to real percentage: snap to 0%
+        // without a transition so the bar doesn't animate down from 38%.
+        fill.style.transition = 'none';
+        fill.className        = 'prog-fill';
+        fill.style.width      = '0%';
+        fill.getBoundingClientRect(); // force reflow to commit the above
+        fill.style.transition = '';
+      }
+      fill.style.width           = msg.pct + '%';
       $('proc-label').textContent = t('proc-pct', Math.round(msg.pct));
       break;
+    }
 
     case 'run-ok': {
       const W = S.inputImg.width, H = S.inputImg.height;
@@ -433,8 +463,19 @@ async function loadFile(file) {
     setStrengthEnabled(false);
     $('btn-process').classList.remove('done');
     $('btn-dl').disabled                = true;
+    if (S.viewMode === 'pixel') {
+      S.viewMode = 'fit';
+      S.panX = 0; S.panY = 0;
+      viewer.classList.remove('pixel-mode');
+      cvBefore.style.transform = '';
+      cvAfter.style.transform  = '';
+      updateViewModeDisplay();
+    }
     renderViewer(S.inputImg, null);
     $('canvas-area').classList.add('viewer-active');
+    $('vmode-toggle').classList.remove('disabled');
+    $('vmode-seg-fit').disabled    = false;
+    $('vmode-seg-pixel').disabled  = false;
     $('iinfo-dim').textContent          = t('px-dims', c.width, c.height);
     $('iinfo-disp').textContent         = '—';
     $('img-info-section').style.display = 'block';
@@ -469,6 +510,14 @@ function clearImage() {
   S.imageState       = 'none';
   S.lastElapsed      = null;
   S.processAfterLoad = false;
+  if (S.viewMode === 'pixel') {
+    S.viewMode = 'fit';
+    S.panX = 0; S.panY = 0;
+    viewer.classList.remove('pixel-mode');
+    cvBefore.style.transform = '';
+    cvAfter.style.transform  = '';
+    updateViewModeDisplay();
+  }
   resetStrength();
   setStrengthEnabled(false);
   $('btn-process').classList.remove('done');
@@ -479,6 +528,9 @@ function clearImage() {
   $('img-info-section').style.display = 'none';
   $('btn-clear').disabled             = true;
   $('btn-dl').disabled                = true;
+  $('vmode-toggle').classList.add('disabled');
+  $('vmode-seg-fit').disabled    = true;
+  $('vmode-seg-pixel').disabled  = true;
   setProcStatus(null);
   updateProcessBtn();
 }
@@ -511,11 +563,22 @@ function renderViewer(before, after) {
   cvAfter.getContext('2d').putImageData(src, 0, 0);
   $('drop-idle').style.display = 'none';
   viewer.style.display         = 'block';
-  requestAnimationFrame(() => { setSlider(S.sliderPct); updateDisplaySize(); });
+  if (S.viewMode === 'pixel') {
+    const tx = `translate(calc(-50% + ${S.panX}px), calc(-50% + ${S.panY}px))`;
+    cvBefore.style.transform = tx;
+    cvAfter.style.transform  = tx;
+    requestAnimationFrame(() => { updatePixelModeClip(); updateDisplaySize(); });
+  } else {
+    requestAnimationFrame(() => { setSlider(S.sliderPct); updateDisplaySize(); });
+  }
 }
 
 function updateDisplaySize() {
   if (!S.inputImg) return;
+  if (S.viewMode === 'pixel') {
+    $('iinfo-disp').textContent = t('px-dims', S.inputImg.width, S.inputImg.height);
+    return;
+  }
   const r = cvBefore.getBoundingClientRect();
   $('iinfo-disp').textContent = t('px-dims', Math.round(r.width), Math.round(r.height));
 }
@@ -527,6 +590,7 @@ function applyBlend() {
 
 function setSlider(pct) {
   S.sliderPct = pct;
+  if (S.viewMode === 'pixel') { updatePixelModeClip(); return; }
   const viewerRect = viewer.getBoundingClientRect();
   const canvasRect = cvAfter.getBoundingClientRect();
   const cvBRect    = cvBefore.getBoundingClientRect();
@@ -564,9 +628,86 @@ function doSlide(e) {
   setSlider(Math.max(0, Math.min(100, (cx - r.left) / r.width * 100)));
 }
 
+// ── Pixel mode / pan ─────────────────────────────────────────
+function updatePixelModeClip() {
+  if (S.viewMode !== 'pixel') return;
+  const w = cvAfter.width;
+  if (!w) return;
+  const clipPct = Math.max(0, Math.min(100, 50 - (S.panX / w) * 100));
+  cvAfter.style.clipPath = `inset(0 0 0 ${clipPct}%)`;
+  vdivider.style.left    = '50%';
+}
+
+function toggleViewMode() {
+  if (!S.inputImg) return;
+  if (S.viewMode === 'fit') {
+    S.viewMode = 'pixel';
+    S.panX = 0; S.panY = 0;
+    viewer.classList.add('pixel-mode');
+    updateViewModeDisplay();
+    requestAnimationFrame(() => { updatePixelModeClip(); updateDisplaySize(); });
+  } else {
+    S.viewMode = 'fit';
+    viewer.classList.remove('pixel-mode');
+    cvBefore.style.transform = '';
+    cvAfter.style.transform  = '';
+    updateViewModeDisplay();
+    requestAnimationFrame(() => { setSlider(50); updateDisplaySize(); });
+  }
+}
+
+function updateViewModeDisplay() {
+  const isFit    = S.viewMode === 'fit';
+  const segFit   = $('vmode-seg-fit');
+  const segPixel = $('vmode-seg-pixel');
+  const desc     = $('vmode-desc');
+  if (segFit)   segFit.classList.toggle('active',  isFit);
+  if (segPixel) segPixel.classList.toggle('active', !isFit);
+  if (desc)     desc.textContent = t(isFit ? 'vmode-desc-fit' : 'vmode-desc-pixel');
+}
+
+function setViewMode(mode) {
+  if (S.viewMode === mode || !S.inputImg) return;
+  toggleViewMode();
+}
+
+viewer.addEventListener('pointerdown', e => {
+  if (S.viewMode !== 'pixel') return;
+  if (e.target !== cvBefore && e.target !== cvAfter) return;
+  e.preventDefault();
+  viewer.setPointerCapture(e.pointerId);
+  S.panning      = true;
+  S.panStartX    = e.clientX;
+  S.panStartY    = e.clientY;
+  S.panStartPanX = S.panX;
+  S.panStartPanY = S.panY;
+  viewer.classList.add('panning-active');
+});
+viewer.addEventListener('pointermove', e => {
+  if (!S.panning) return;
+  const vW = viewer.clientWidth, vH = viewer.clientHeight;
+  const cW = cvAfter.width,      cH = cvAfter.height;
+  S.panX = Math.max(60 - vW / 2 - cW / 2, Math.min(vW / 2 + cW / 2 - 60,  S.panStartPanX + (e.clientX - S.panStartX)));
+  S.panY = Math.max(60 - vH / 2 - cH / 2, Math.min(vH / 2 + cH / 2 - 60, S.panStartPanY + (e.clientY - S.panStartY)));
+  const tx = `translate(calc(-50% + ${S.panX}px), calc(-50% + ${S.panY}px))`;
+  cvBefore.style.transform = tx;
+  cvAfter.style.transform  = tx;
+  const w = cvAfter.width;
+  if (w) {
+    const clipPct = Math.max(0, Math.min(100, 50 - (S.panX / w) * 100));
+    cvAfter.style.clipPath = `inset(0 0 0 ${clipPct}%)`;
+  }
+});
+const endPan = () => { S.panning = false; viewer.classList.remove('panning-active'); };
+viewer.addEventListener('pointerup',     endPan);
+viewer.addEventListener('pointercancel', endPan);
+
 window.addEventListener('resize', () => {
   if (S.inputImg && $('viewer').style.display !== 'none') {
-    requestAnimationFrame(() => { setSlider(S.sliderPct); updateDisplaySize(); });
+    requestAnimationFrame(() => {
+      if (S.viewMode === 'pixel') updatePixelModeClip(); else setSlider(S.sliderPct);
+      updateDisplaySize();
+    });
   }
 });
 

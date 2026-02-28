@@ -357,6 +357,24 @@ a:hover { text-decoration: underline; }
   color: var(--white);
 }
 
+/* ── Pixel (1:1) mode ────────────────────────────────────── */
+.viewer.pixel-mode canvas {
+  max-width: none;
+  max-height: none;
+}
+.viewer.pixel-mode {
+  z-index: 4;
+}
+.viewer.pixel-mode canvas { cursor: grab; }
+.viewer.pixel-mode.panning-active { cursor: grabbing; }
+.viewer.pixel-mode .viewer-divider {
+  pointer-events: none;
+  cursor: default;
+}
+.viewer.pixel-mode .viewer-handle { display: none; }
+.viewer.pixel-mode .vtag-before,
+.viewer.pixel-mode .vtag-after { display: none; }
+
 /* Global drag overlay */
 #drag-overlay {
   position: fixed; inset: 0;
@@ -807,6 +825,64 @@ input[type=range].styled::-moz-range-track {
   border-color: var(--surface-hi);
 }
 .btn-ghost:disabled { opacity: 0.18; cursor: default; }
+
+/* ── View mode section ───────────────────────────────────── */
+.view-mode-section {
+  padding: 13px 16px;
+  border-bottom: 1px solid var(--line);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  flex-shrink: 0;
+}
+.vmode-toggle {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  background: rgba(0, 0, 0, 0.25);
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  padding: 3px;
+  gap: 3px;
+}
+.vmode-toggle.disabled {
+  opacity: 0.18;
+  pointer-events: none;
+}
+.vmode-seg {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 10px 14px;
+  border: none;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--text-2);
+  font-family: var(--font-ui);
+  font-size: clamp(12px, 0.9vw, 14px);
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s, box-shadow 0.15s;
+}
+.vmode-seg:hover:not(.active) {
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--text);
+}
+.vmode-seg.active {
+  background: var(--surface);
+  color: var(--text);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.35);
+  cursor: default;
+}
+.vmode-desc {
+  font-size: clamp(11px, 0.85vw, 12px);
+  color: var(--text-2);
+  font-weight: 300;
+  opacity: 0.65;
+  line-height: 1.65;
+  white-space: pre-line;
+}
+.vmode-toggle.disabled ~ .vmode-desc { opacity: 0.28; }
+.view-mode-section:has(.vmode-toggle.disabled) .group-label { opacity: 0.28; }
 
 /* ── Inline status ───────────────────────────────────────── */
 .inline-status {

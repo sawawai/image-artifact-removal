@@ -65,26 +65,10 @@ async function loadModel(modelUrl) {
   }
 
   // Pass buf.buffer directly — ORT reads but does not detach it, so no copy needed.
-  // enableGraphCapture records GPU command buffers on the first session.run() and
-  // replays them for every subsequent call — a significant throughput gain for
-  // WebGPU, especially on Firefox/wgpu which has high per-dispatch CPU overhead.
-  // Requires fixed input/output shapes, which our 512×512-padded tiles satisfy.
-  const sessionOpts = {
+  session = await ort.InferenceSession.create(buf.buffer, {
     executionProviders: providers,
     graphOptimizationLevel: 'all',
-  };
-  if (providers[0] === 'webgpu') sessionOpts.enableGraphCapture = true;
-  try {
-    session = await ort.InferenceSession.create(buf.buffer, sessionOpts);
-  } catch (e) {
-    if (sessionOpts.enableGraphCapture) {
-      postMessage({ type: 'log', msg: 'Graph capture unavailable, retrying: ' + e.message });
-      delete sessionOpts.enableGraphCapture;
-      session = await ort.InferenceSession.create(buf.buffer, sessionOpts);
-    } else {
-      throw e;
-    }
-  }
+  });
 
   // ── Detect output layout (NCHW vs NHWC) with a warm-up run ───
   // Firefox's wgpu backend returns NHWC [1,H,W,3] instead of NCHW [1,3,H,W].
